@@ -72,7 +72,7 @@ class Cell(Renderable):
                 self.polygon.append(project(each_vertex.x, each_vertex.y))
 
             # Calculate the color
-            self.cell_color = (200 * self.altitude, 128 + 128 * self.altitude, 200 * self.altitude)
+            self.cell_color = (200 * self.altitude, 127 + 128 * self.altitude, 200 * self.altitude)
 
         # Now we can render the shape
         if self.altitude > settings.wtr_sea_level:
@@ -94,11 +94,25 @@ class Vertex(Renderable):
 
         # Associated Terrain data
         self.altitude = 0.0
+        self.is_peak = False
 
         # Rendering data
         self.color = (0, 0, 0)
         self.ss_x = None
         self.ss_y = None
+
+    def get_average_altitude(self, resolution):
+        """Gets the average altitude of a vertex by looking at each neighbor and running this method recursively at one
+        lower resolution. Resolution = the number of neighbors iteratively queried.
+        Resolution:0 = the vertex's local altitude."""
+        if resolution <= 0:
+            return self.altitude
+        else:
+            total_altitude = 0.0
+            for each_neighbor in self.neighbors.keys():
+                total_altitude += each_neighbor.get_average_altitude(resolution - 1)
+            total_altitude /= len(self.neighbors)
+            return total_altitude
 
     def find_neighbors(self, index, vor, vertices):
         """Finds the neighboring vertices by looking them up in the voronoi diagram, then builds a dictionary where

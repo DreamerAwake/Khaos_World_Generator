@@ -11,32 +11,39 @@ class Settings:
         self.map = None
 
         # Set the random seed
-        self.seed = 26
+        self.seed = 35
         numpy.random.seed(self.seed)
         random.seed(self.seed)
 
         # Program settings
         self.debug_console = True
-        self.debug_detail = 3       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
+        self.debug_detail = 4       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
 
         # Pygame settings
         self.screen_size = (1200, 900)
+        self.do_render_vertices = False
 
         # Voronoi generation settings
         self.total_cells = 3000
-        self.relax_passes = 6
+        self.relax_passes = 5
 
         # Terrain generation settings
-        self.mtn_height_skew = 0.9  # Skews the generation of mountains toward being taller or shorter, on average
-        self.mtn_coverage = 0.12    # Coverage determines how much of the map should be targeted to be mountaintops.
-        self.mtn_continuity = 1.1  # Continuity determines how long mountain ridges tend to be.
-        self.mtn_forks = 0.4       # Rate at which the mountain ridges tend to fork into sub-ridges
-        self.mtn_max_forks = 6      # Maximum number of forks allowed, to prevent infinite loops
-        self.mtn_ridge_grade = -0.7  # The grade of the mountain ridge found through the get_altitude function
-        self.mtn_slope_grade = 1.1   # The grade of the mountain slopes
-        self.mtn_drop_dist_mod = 6   # Higher numbers allow for longer mountain ranges
+        self.tect_plates_min = 12    # The minimum number of tectonic plates used in altitude generation
+        self.tect_plates_max = 20    # The maximum number of tectonic plates
+        self.tect_min_dist = 0.04       # The minimum distance between two plate centers
+        self.tect_attempt_to_place = 30     # Number of times the generator will try to place a single tectonic plate
+        self.tect_smoothing_resolution = 4  # Depth of samples when smoothing by average altitude
+        self.tect_smoothing_repetitions = 2  # Number of times to perform altitude smoothing
+        self.tect_final_alt_mod = 0.5       # Determines the middlepoint of each plate's altitude gradient
 
-        self.wtr_sea_level = 0.05    # The sea level of the terrain, all lower points will be underwater
+        self.mtn_peak_reduction_factor = 0.1    # The maximum amount that mountain peaks are allowed to sit below 1.0
+        self.mtn_peak_weight = 0.9           # The weight given to the peak when averaging for mountain ridges
+        self.mtn_max_node_chain = 200        # Number vertexes in a mountain chain at maximum
+        self.mtn_fork_chance = 0.15      # Percent chance a mountain node will fork
+        self.mtn_ridges_max = 25        # Sets the maximum number of mountain ridges placed above the tectonic peaks
+        self.mtn_ridges_min = 10         # Sets the minimum number
+
+        self.wtr_sea_level = 0.3    # The sea level of the terrain, all lower points will be underwater
 
     def db_print(self, string, detail=0):
         """A debugging function that allows selective printing of debug console text based on a
@@ -86,58 +93,33 @@ class KhaosMap:
         self.far_x, self.far_y = self.get_furthest_members()
 
         # Generate the altitudes for the vertices and the cells
-        dbprint("Finding altitudes...")
-        self.gen_vertex_altitudes()
+        dbprint("Beginning altitude generation...")
+        dbprint("Locating tectonic plates...", detail=2)
+        plate_centers = self.get_plate_centers()   # Finds the plates used for altitude generation
+        slopes = self.get_plate_slopes(plate_centers)
 
-        dbprint("Extrapolating altitudes...")
+        dbprint("Deriving altitudes...", detail=2)
+        self.set_altitudes(plate_centers, slopes)
+
+        dbprint("Smoothing vertex altitudes...", detail=3)
+        for iteration in range(0, self.settings.tect_smoothing_repetitions):
+            self.smooth_altitudes(self.settings.tect_smoothing_resolution)
+
+        dbprint("Pathing mountain ranges...", detail=2)
+        number_of_ridges = random.randint(self.settings.mtn_ridges_min, self.settings.mtn_ridges_max)
+        peaks = self.get_peaks()
+        self.ridges = []        # TODO remove this debug variable
+        for iteration in range(0, number_of_ridges):
+            self.ridges += self.gen_single_ridge(peaks)
+
+        dbprint("Extrapolating altitudes to cells...", detail=3)
         for each_cell in self.cells:
             each_cell.find_altitude()
 
+        self.peaks = self.get_peaks()  # TODO remove this debug variable
+
         # TODO Wind patterns, rainfall
         # TODO Temperature
-
-    def gen_altitude_ridges(self):
-        """Creates the mountain ridge paths used by the altitude generator."""
-        alt_ridges = []
-        total_mountain_nodes = 0
-        all_closed = False
-
-        while total_mountain_nodes / len(self.vertices) < self.settings.mtn_coverage:
-            # Debug console printout
-            self.settings.db_print(f"Total MTN Nodes: {total_mountain_nodes}, "
-                                   f"Target Nodes = {len(self.vertices) * self.settings.mtn_coverage}, - "
-                                   f"{total_mountain_nodes/len(self.vertices) * self.settings.mtn_coverage}%", detail=4)
-
-            # Create a new mountain ridge
-            self.create_new_mtn_ridge(alt_ridges)
-            total_mountain_nodes += alt_ridges[-1].length()
-
-            # Work through the unforked ridges and fork them at random intervals, start with the new one just added
-            current_ridge = alt_ridges[-1]
-
-            while not all_closed:
-                # Fork the current ridge
-                self.settings.db_print(f"Adding fork to ridge beginning at "
-                                       f"{current_ridge.path[0].x}, {current_ridge.path[0].y}", detail=5)
-                for each_vertex in current_ridge.path:
-                    if random.random() < self.settings.mtn_forks and current_ridge.depth < self.settings.mtn_max_forks:
-                        # Make the new ridges shorter based on the number of previous forks
-                        self.create_new_mtn_ridge(alt_ridges, each_vertex,
-                                                  1 / (current_ridge.depth + 1))
-                        alt_ridges[-1].depth = current_ridge.depth + 1
-                        total_mountain_nodes += alt_ridges[-1].length()
-
-                # Find an unforked ridge, otherwise, kick back to making new ridges
-                all_closed = True
-
-                for ridge in alt_ridges:
-                    if ridge.open:
-                        # Make an open ridge into the current one, close it and make the forking process continue.
-                        current_ridge = ridge
-                        current_ridge.open = False
-                        all_closed = False
-                        break
-        return alt_ridges
 
     def gen_vor(self):
         """Generates a voronoi diagram and passes it through several relax iterations as decided in the settings."""
@@ -184,66 +166,52 @@ class KhaosMap:
 
         return cells, vertices
 
-    def gen_vertex_altitudes(self):
-        """Given the vertex list, this function gives them all altitudes.
-        First, it finds several mountain ridges and then projects them based on a few characteristics found in the
-        settings class. Then it creates a number of plate structures which simulate continental plains.
-        In the end, each vertex has an altitude based on a projection from the nearest ridge point."""
+    def gen_single_ridge(self, peaks):
+        """Creates a high forking mountain ridge on the altitude map."""
+        dbprint = self.settings.db_print
 
-        # Create the ridge paths used to model mountains
-        mtn_ridges = self.gen_altitude_ridges()
+        # Gets a random peak to start with, sets its altitude to the maximum, minus a factor
+        random_peak = peaks[random.randrange(0, len(peaks))]
+        new_alt = 1.0 - random.random() * self.settings.mtn_peak_reduction_factor
 
-        # We now begin applying altitudes to our ridge points.
-        # Set the very first ridge node to 1.0
-        mtn_ridges[0].path[0].altitude = 1.0
+        # Make sure not to accidentally reduce the height
+        if random_peak.altitude < new_alt:
+            random_peak.altitude = new_alt
 
-        for each_ridge in mtn_ridges:
-            for vertex_path_index, ridge_point in enumerate(each_ridge.path):
-                # Skip vertices that already have altitudes, which will have been set by a parent ridge or the 1.0 point
-                if ridge_point.altitude != 0.0:
-                    continue
-                # If the current location is the first entry in a path and 0.0, then we give it a random altitude
-                elif vertex_path_index == 0:
-                    # Take (random range 0.0-1.0 + the mtn_height_skew) * the mtn_height_skew
-                    ridge_point.altitude = \
-                        (random.random() + self.settings.mtn_height_skew) * self.settings.mtn_height_skew
+        dbprint(f"Adding peak at {random_peak.x}, {random_peak.y}, ALT: {random_peak.altitude}", detail=4)
 
-                # Otherwise we assign a height based on the drop from the previous ridge point
+        # Create lists for pathing
+        total_nodes = 0
+        opened = [random_peak]
+        closed = []
+
+        # Begin looping through the path lists
+        while opened and total_nodes < self.settings.mtn_max_node_chain:
+
+            for each_vertex in opened:
+
+                # Ready the current vertex for closing before the next pass starts
+                closed.append(each_vertex)
+
+                # Decide if the ridge will fork
+                if random.random() < self.settings.mtn_fork_chance:
+                    dbprint(f"Forking at {each_vertex.x}, {each_vertex.y}")
+                    self.get_next_ridge(each_vertex, opened, closed)
+                    self.get_next_ridge(each_vertex, opened, closed)
+                    total_nodes += 2
                 else:
-                    ridge_point.altitude = \
-                        get_altitude_drop(each_ridge.path[vertex_path_index - 1].altitude,
-                                          each_ridge.path[vertex_path_index - 1].neighbors[ridge_point]
-                                          / self.settings.mtn_drop_dist_mod,
-                                          self.settings.mtn_ridge_grade)
+                    self.get_next_ridge(each_vertex, opened, closed)
+                    total_nodes += 1
 
-        # Now we will calculate each vertex altitude on the map
-        # First we create a list containing all the unique altitude ridge vertices
-        current_vertices = []
-        next_vertices = []
+                if total_nodes > self.settings.mtn_max_node_chain:
+                    break
 
-        for each_ridge in mtn_ridges:
-            for each_vertex in each_ridge.path:
-                if each_vertex not in current_vertices:
-                    current_vertices.append(each_vertex)
+            # Remove closed vertices from open
+            for each_vertex in closed:
+                if each_vertex in opened:
+                    opened.remove(each_vertex)
 
-        # Begin the crawler loop
-        while current_vertices:
-            # For each vertex adjacent to a current vertex we calculate the height drop.
-            for each_vertex in current_vertices:
-                for each_neighbor in each_vertex.neighbors.keys():
-                    new_alt = get_altitude_drop(each_vertex.altitude,
-                                                each_vertex.neighbors[each_neighbor], self.settings.mtn_slope_grade)
-                    # If the altitude calculated is greater, adjust the neighbor's altitude and add it to the next list
-                    if new_alt > each_neighbor.altitude:
-                        each_neighbor.altitude = new_alt
-                        next_vertices.append(each_neighbor)
-
-            # Once done processing the list, clear it, make it a copy of the next, then clear that as well
-            current_vertices.clear()
-            current_vertices = next_vertices.copy()
-            next_vertices.clear()
-
-            # If there are no more vertices lower than the last pass, we're done and the list.clear() will end the loop
+        return closed
 
     def get_furthest_members(self):
         """Used to obtain the most distant members of the voronoi diagram.
@@ -259,33 +227,136 @@ class KhaosMap:
 
         return furthest_x, furthest_y
 
-    def create_new_mtn_ridge(self, mtn_ridges, starting_point=None, continuity_mod=1.0):
-        """Creates a new mountain ridge for the altitude generator.
-        If not provided a starting point, it finds a random one."""
+    def get_next_ridge(self, vertex, opened, closed):
+        """Finds the tallest neighbor of a vertex for the mountain range builder's pathfinder."""
+        # Find next tallest neighbor to form the next portion of the ridge
+        tallest_neighbor_alt = -0.1
+        tallest_neighbor = None
+        for each_neighbor in vertex.neighbors.keys():
+            # Ignore vertices already found by the ridge builder
+            if each_neighbor not in closed and each_neighbor not in opened:
+                if each_neighbor.altitude > tallest_neighbor_alt:
+                    tallest_neighbor_alt = each_neighbor.altitude
+                    tallest_neighbor = each_neighbor
 
-        if starting_point is None:
-            starting_point = self.vertices[random.randrange(0, len(self.vertices))]
+        # If something is found, average its current altitude with the peak's altitude, add it to open
+        if tallest_neighbor:
+            tallest_neighbor.altitude = vertex.altitude * self.settings.mtn_peak_weight + \
+                                        tallest_neighbor.altitude * abs(self.settings.mtn_peak_weight - 1.0)
+            opened.append(tallest_neighbor)
 
-        self.settings.db_print(f"Creating new ridge at {starting_point.x}, {starting_point.y}", detail=5)
+    def get_peaks(self):
+        """Finds the vertices that have higher altitudes than all of their neighbors,
+        sets is_peak internally and records them in a list."""
+        peaks = []
+        for each_vertex in self.vertices:
+            each_vertex.is_peak = True
+            for each_neighbor in each_vertex.neighbors:
+                if each_neighbor.altitude > each_vertex.altitude:
+                    each_vertex.is_peak = False
+                    break
+            if each_vertex.is_peak:
+                peaks.append(each_vertex)
 
-        # Place the ridge path in the provided list
-        mtn_ridges.append(Path(starting_point))
+        return peaks
 
-        # Find a suitable endpoint for the new random ridge based on mtn_continuity
-        next_random_point = None
-        number_of_passes = 0
-        self.settings.db_print(f"Entering random endpoint loop", detail=5)
-        while next_random_point is None and number_of_passes < 15:
-            next_random_point = self.vertices[random.randrange(0, len(self.vertices))]
-            if get_distance(next_random_point, mtn_ridges[-1].path[-1]) < self.settings.mtn_continuity * continuity_mod:
-                mtn_ridges[-1].add_endpoint(next_random_point)
-                self.settings.db_print(f"Endpoint at {next_random_point.x}, {next_random_point.y}", detail=5)
+    def get_plate_centers(self):
+        """Used to find the central vertices of the tectonic plates used by the altitude/mountain generator."""
+
+        number_of_plates = random.randrange(self.settings.tect_plates_min, self.settings.tect_plates_max)
+        plates = []
+
+        for iteration in range(0, number_of_plates):
+            rand_index = random.randrange(0, len(self.vertices))
+            if not plates:
+                plates.append(self.vertices[rand_index])
             else:
-                next_random_point = None
-                number_of_passes += 1
-                self.settings.db_print(f"Fork generation iterations = {number_of_passes}", detail=5)
-                if number_of_passes == 15:
-                    self.settings.db_print("Fork generation reached max iterations, moving on...", detail=4)
+                # Check that the distance between plates meets the minimum requirements, or choose a new one
+                far_enough = False
+                attempts = 0
+                while not far_enough and attempts < self.settings.tect_attempt_to_place:
+                    attempts += 1
+                    far_enough = True
+                    for each_plate in plates:
+                        if get_distance(self.vertices[rand_index], each_plate) < self.settings.tect_min_dist:
+                            far_enough = False
+                            rand_index = random.randrange(0, len(self.vertices))
+                            break
+                if far_enough:
+                    plates.append(self.vertices[rand_index])
+
+        return plates
+
+    def get_plate_slopes(self, plates):
+        """Gets the slopes for each tectonic plate used by the height generator"""
+
+        slopes = []
+        for iteration in range(0, len(plates)):
+            tilt_inversion = random.random()
+
+            if tilt_inversion < 0.5:
+                rand_x = random.random()
+            else:
+                rand_x = -random.random()
+
+            if tilt_inversion < 0.25 or tilt_inversion > 0.75:
+                rand_y = random.random()
+            else:
+                rand_y = -random.random()
+
+            slopes.append((rand_x, rand_y))
+
+        return slopes
+
+    def smooth_altitudes(self, resolution):
+        """Smooths out the altitudes on the map by finding an average of the surrounding vertices to a sample distance
+        equal to the resolution. Builds a list of smoothed altitudes first, then applies them to prevent changes from
+        affecting the results of further calculations."""
+
+        smoothed_altitudes = []
+        for each_vertex in self.vertices:
+            smoothed_altitudes.append(each_vertex.get_average_altitude(resolution))
+
+        for iteration in range(0, len(self.vertices)):
+            self.vertices[iteration].altitude = smoothed_altitudes[iteration]
+
+    def set_altitudes(self, plates, slopes):
+        """Uses the tectonic plates to assign altitudes to each vertex.
+        For each vertex assigns an altitude based on its plate and slope."""
+        x_dist = 0
+        y_dist = 0
+
+        for each_vertex in self.vertices:
+            shortest_dist = 3.0
+            best_plate_index = None
+
+            # Finds the closest plate
+            for iteration in range(0, len(plates)):
+
+                # Finds the distances of both axes from the center point of the plate
+                x_dist = each_vertex.x - plates[iteration].x
+                y_dist = each_vertex.y - plates[iteration].y
+
+                total_dist = math.sqrt(abs(x_dist**2) + abs(y_dist**2))
+
+                # Determines if we've found the nearest plate so far
+                if total_dist < shortest_dist:
+                    shortest_dist = total_dist
+                    best_plate_index = iteration
+
+            # Applies the slope to the centerpoint distances
+            x_alt_delta = x_dist * slopes[best_plate_index][0]
+            y_alt_delta = y_dist * slopes[best_plate_index][1]
+
+            # Calculates the final altitude
+            each_vertex.altitude = x_alt_delta + y_alt_delta + self.settings.tect_final_alt_mod
+
+            # If the altitude rises over 1.0 drift from that point is inverted
+            if each_vertex.altitude > 1.0:
+                each_vertex.altitude = -1 * each_vertex.altitude + 1.0
+            # 0.0 is simply an altitude floor
+            if each_vertex.altitude < 0.0:
+                each_vertex.altitude = 0.0
 
 
 def lloyds_relax(vor):
@@ -293,7 +364,8 @@ def lloyds_relax(vor):
     those to scipy to re-create a relaxed diagram."""
     centroids = None
     for each_point in enumerate(vor.points):
-        if centroids is not None and abs(each_point[1][0]) > 1.0 or centroids is not None and abs(each_point[1][1]) > 1.0:
+        if centroids is not None and abs(each_point[1][0]) > 1.0 \
+                or centroids is not None and abs(each_point[1][1]) > 1.0:
             centroids = numpy.append(centroids, [each_point[1]], axis=0)
         else:
             region_vertices = None
@@ -310,27 +382,6 @@ def lloyds_relax(vor):
             else:
                 centroids = numpy.append(centroids, [centroid], axis=0)
     return sptl.Voronoi(centroids)
-
-
-def get_altitude_drop(init_altitude, distance, grade):
-    """Given the source's distance from a point, that point's altitude, and a grade,
-    finds the altitude lost over that distance, then returns the new altitude."""
-    # First find the converted starting_altitude
-    # Then, add the distance between the two points
-    new_dist = convert_dist_alt(init_altitude, grade) + distance
-
-    if new_dist > 1.0:
-        new_dist = 1.0
-
-    # return the conversion back to altitude as the new altitude
-    return convert_dist_alt(new_dist, grade)
-
-
-def convert_dist_alt(x, grade, scale=1.0):
-    """y = (b - x) / (xg + 1); where b is a scalar for the range of the numbers produced, and g is the grade.
-    Graph it for a better idea of what's going on here."""
-    result = (scale-x)/((x * grade) + 1)
-    return result
 
 
 if __name__ == "__main__":

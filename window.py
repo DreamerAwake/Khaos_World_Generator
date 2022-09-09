@@ -72,7 +72,11 @@ if __name__ == "__main__":
     # Initialize window
     window = PyGameWindow(khaos_map)
 
-    window.vertexQ.disable = True
+    if not khaos_map.settings.do_render_vertices:
+        window.vertexQ.disable = True
+
+    for each_vertex in khaos_map.vertices:
+        khaos_map.settings.db_print(f"{each_vertex.x}, {each_vertex.y}, {each_vertex.altitude}")
 
     # Run the renderer window
     window.main_loop()
