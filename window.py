@@ -37,7 +37,6 @@ class PyGameWindow:
             pygame.display.flip()
 
 
-
 class KeyStrokes:
     """Manages input from the keyboard."""
     def __init__(self, settings):

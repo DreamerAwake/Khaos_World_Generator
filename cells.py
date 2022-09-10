@@ -13,11 +13,14 @@ class Cell(Renderable):
 
         # Cell data
         self.x, self.y = point
+        self.ss_x = None
+        self.ss_y = None
         self.region = {}
         self.neighbors = {}
 
         # Associated Terrain data
         self.altitude = 0.0
+        self.wind_deflection = None
 
         # Rendering Settings
         self.polygon = None
@@ -31,6 +34,28 @@ class Cell(Renderable):
             self.altitude += each_vertex.altitude
 
         self.altitude /= len(self.region)
+
+    def find_screen_space(self, settings):
+        """Finds the x and y of the cell on the screen."""
+        self.ss_x, self.ss_y = settings.project_to_screen(self.x, self.y)
+
+    def find_wind_deflection(self):
+        """Finds the wind deflection vector for the cell."""
+        self.wind_deflection = None
+
+        # Creates the vector objects and makes a linear interpolation of them, scaling based on the total to crea
+        for each_vector in self.region.keys():
+            x_diff = each_vector.x - self.x
+            y_diff = each_vector.y - self.y
+            deflector = pygame.math.Vector2(x_diff, y_diff)
+            if each_vector.altitude == 0.0:
+                deflector.scale_to_length(0.0)
+            else:
+                deflector.scale_to_length(-each_vector.altitude * 0.1)
+            if self.wind_deflection is None:
+                self.wind_deflection = deflector
+            else:
+                self.wind_deflection += deflector
 
     def find_region(self, index, vor, vertices):
         """Finds the region for the cell, which are stored as the vertex objects that make up that region."""
@@ -79,6 +104,10 @@ class Cell(Renderable):
             pygame.draw.polygon(surface, self.cell_color, self.polygon, 0)
         else:
             pygame.draw.polygon(surface, (0, 64, 196), self.polygon, 0)
+
+        # Also render the wind redirection vector
+        # pygame.draw.line(surface, (100, 0, 0), (self.ss_x, self.ss_y), (self.ss_x + self.wind_deflection.x * 1000, self.ss_y + self.wind_deflection.y * 1000), 2)
+        # pygame.draw.circle(surface, (0, 0, 0), (self.ss_x, self.ss_y), 3)
 
 
 class Vertex(Renderable):
