@@ -1,3 +1,4 @@
+from pygame.math import Vector2
 import numpy.random
 import random
 
@@ -8,20 +9,22 @@ class Settings:
         self.map = None
 
         # Set the random seed
-        self.seed = 36
+        self.seed = 33
         numpy.random.seed(self.seed)
         random.seed(self.seed)
 
         # Program settings
         self.debug_console = True
-        self.debug_detail = 2       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
+        self.debug_detail = 0       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
 
         # Pygame settings
-        self.screen_size = (1200, 900)
+        self.screen_size = (1800, 1000)
+        self.framerate = 60
         self.do_render_vertices = False
+        self.do_render_atmosphere = True
 
         # Voronoi generation settings
-        self.total_cells = 3000
+        self.total_cells = 2500
         self.relax_passes = 5
 
         # Terrain generation settings
@@ -33,14 +36,36 @@ class Settings:
         self.tect_smoothing_repetitions = 2  # Number of times to perform altitude smoothing
         self.tect_final_alt_mod = 0.5       # Determines the middlepoint of each plate's altitude gradient
 
-        self.mtn_peak_reduction_factor = 0.1    # The maximum amount that mountain peaks are allowed to sit below 1.0
+        self.mtn_peak_reduction_factor = 0.05    # The maximum amount that mountain peaks are allowed to sit below 1.0
         self.mtn_peak_weight = 0.9           # The weight given to the peak when averaging for mountain ridges
-        self.mtn_max_node_chain = 200        # Number vertexes in a mountain chain at maximum
+        self.mtn_max_node_chain = 300        # Number vertexes in a mountain chain at maximum
         self.mtn_fork_chance = 0.15      # Percent chance a mountain node will fork
         self.mtn_ridges_max = 25        # Sets the maximum number of mountain ridges placed above the tectonic peaks
         self.mtn_ridges_min = 7         # Sets the minimum number
 
-        self.wtr_sea_level = 0.3    # The sea level of the terrain, all lower points will be underwater
+        self.atmo_tropics_extent = 0.2  # The +/- Y value where the tropics extend to from the "equator" (y = 0)
+        self.atmo_arctic_extent = 0.5   # The Y value where the arctic zones extend to from the map's edges (far_y)
+
+        self.wind_streams_vector = Vector2(0.15, 0)  # The vector of the jetstreams added to wind vectors
+        self.wind_deflection_weight = 1.3   # The weight given to the effect of a deflection modifier
+        self.wind_take_strength = 0.2       # The percentage of a cell's wind that is lost to take_wind at wind_multi 1
+        self.wind_critical_angle = 2.75     # Maximum angle that wind will
+        self.wind_soft_cap = 0.7        # Soft cap on max wind speed
+        self.wind_hard_cap = 1.1        # Hard cap for wind speed
+        self.wind_resistance = 0.2     # Resistance offered by the soft cap and by air friction
+        self.wind_presim = 0        # Number of wind ticks to presimulate in worldgen
+
+        self.temps_equatorial = 95.0    # The target temperature for the equator (in F, because I am a dumb American)
+        self.temps_lowest = -35.0       # The lowest allowed temperature
+        self.temps_highest = 130           # The temperature cap
+        self.temps_equatorial_rise = 9.0  # The rise in temperature added at the equator to radiate heat to the map
+        self.temps_arctic_cooling = 10.0  # The amount of temp lost in the arctic regions per tick
+        self.temps_natural_cooling = 0.4    # Amount of heat lost each tick
+        self.temps_critical_angle = 4  # The maximum angle (in radians) that allows a tile's wind to transfer heat
+
+        self.baro_transfer_rate = 0.03   # A multiplier on the value of pressure transfer between cells
+
+        self.wtr_sea_level = 0.25    # The sea level of the terrain, all lower points will be underwater
 
     def db_print(self, string, detail=0):
         """A debugging function that allows selective printing of debug console text based on a
@@ -68,4 +93,3 @@ class Settings:
 
         # Return the result
         return ss_x, ss_y
-

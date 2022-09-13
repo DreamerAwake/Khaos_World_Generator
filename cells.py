@@ -1,15 +1,17 @@
+import math
+
 import pygame.draw
 
 from render import *
-
-import math
 
 
 class Cell(Renderable):
     """Stores information about a single cell, which has a generator point treated as a pseudo-center and a region
     formed of shared edge vertices with its neighbor cells."""
-    def __init__(self, point):
+    def __init__(self, point, settings):
         super().__init__()
+
+        self.settings = settings
 
         # Cell data
         self.x, self.y = point
@@ -21,6 +23,19 @@ class Cell(Renderable):
         # Associated Terrain data
         self.altitude = 0.0
         self.wind_deflection = None
+
+        self.wind_vector = pygame.math.Vector2(0, 0)
+        self.temperature = (settings.temps_equatorial + settings.temps_lowest) / 2
+        if abs(self.y) > 1.2 - self.settings.atmo_arctic_extent:
+            self.pressure = -0.2
+        elif abs(self.y) < self.settings.atmo_tropics_extent:
+            self.pressure = 0.2
+        else:
+            self.pressure = 0.01
+
+        self.wind_vector_delta = pygame.math.Vector2(0, 0)
+        self.temperature_delta = 0
+        self.pressure_delta = 0
 
         # Rendering Settings
         self.polygon = None
@@ -35,9 +50,28 @@ class Cell(Renderable):
 
         self.altitude /= len(self.region)
 
-    def find_screen_space(self, settings):
+    def find_color(self):
+        total_temps_range = (self.settings.temps_equatorial - self.settings.temps_lowest)
+        ave_temps = (total_temps_range / 2)
+        heat_r_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps
+        heat_g_mod = ((self.temperature - self.settings.temps_lowest) - self.settings.temps_lowest) / total_temps_range
+        heat_b_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps + 0.25
+
+        colors = [(64 * self.altitude) + (159 * heat_r_mod),
+                  (128 * self.altitude) + 127 - (12 ** (heat_g_mod + 1)),
+                  (64 * self.altitude) - (159 * heat_b_mod)]
+
+        for index in range(0, len(colors)):
+            if colors[index] < 0:
+                colors[index] = 0
+            elif colors[index] > 255:
+                colors[index] = 255
+
+        self.cell_color = colors
+
+    def find_screen_space(self):
         """Finds the x and y of the cell on the screen."""
-        self.ss_x, self.ss_y = settings.project_to_screen(self.x, self.y)
+        self.ss_x, self.ss_y = self.settings.project_to_screen(self.x, self.y)
 
     def find_wind_deflection(self):
         """Finds the wind deflection vector for the cell."""
@@ -83,31 +117,201 @@ class Cell(Renderable):
                 continue
             self.neighbors[cell] = math.sqrt(abs(self.x - cell.x) + abs(self.y - cell.y))
 
-    def update(self, surface, settings):
+    def is_equatorial(self):
+        """Returns True if the cell lies on the equator, otherwise returns false."""
+        is_above = False
+        is_below = False
+
+        for each_vertex in self.region:
+            if each_vertex.y > 0.0:
+                is_above = True
+            elif each_vertex.y < 0.0:
+                is_below = True
+
+        if is_above and is_below:
+            return True
+        else:
+            return False
+
+    def take_baro(self, baro_multiplier, source):
+        """Given a wind_multiplier between 1 and 0, returns the transfer of pressure between this cell and the source"""
+        delta = (self.pressure - source.pressure) * baro_multiplier * self.settings.baro_transfer_rate
+
+        # Calculate the current temperature into a percentage of the min-max temps
+        temps_as_percent = (self.temperature - self.settings.temps_lowest) / \
+                           (self.settings.temps_equatorial - self.settings.temps_lowest)
+
+        # High temps cause a lower pressure transfer rate (simulating low pressure zones caused by rising hot air)
+        if temps_as_percent > 0.5:
+            # The greater self pressure is relative to source_pressure, donate more pressure, inverse is also true
+            delta *= (1 + self.pressure) / (1 + source.pressure + temps_as_percent)
+
+        # Low temps cause higher pressure transfer rate (simulating high pressure zones caused by dense cool air)
+        else:
+            delta *= (1 + self.pressure + (1 - temps_as_percent)) / (1 + source.pressure)
+
+        # Cap pressure at 1.0
+        if source.pressure + source.pressure_delta + delta >= 1.0 and delta > 0.0:
+            return 0
+
+        # Floor pressure at -1.0
+        if self.pressure + self.pressure_delta - delta <= -1.0 and delta < 0.0:
+            return 0
+
+        self.pressure_delta -= delta
+
+        return delta
+
+    def take_wind(self, wind_multiplier):
+        """Given a wind_multiplier between 1 and 0, returns a segment of its vector,
+        automatically reducing its own delta by the same amount."""
+
+        delta = self.wind_vector * wind_multiplier * self.settings.wind_take_strength
+
+        # Local pressure affects the transfer rate of the wind
+        delta *= self.pressure + 1
+
+        self.wind_vector_delta -= delta
+
+        return delta
+
+    def take_temp(self, temp_multiplier, source):
+        """Given a wind_multiplier between 1 and 0, returns the change in temperature affected on the source cell."""
+        # TODO fix this WTF
+        delta = ((self.temperature - self.settings.temps_lowest + self.temperature_delta) -
+                 (source.temperature - self.settings.temps_lowest + source.temperature_delta)) * temp_multiplier
+
+        self.temperature_delta -= delta
+
+        return delta
+
+    def calculate_atmosphere_update(self, k_map):
+        """Calculates updates to the local atmosphere based on wind speed, direction, temp and current pressure.
+        Sends delta calls to neighbors, and sets internal deltas."""
+        stg = self.settings
+
+        # Cells poll their neighbors for valid wind angles, and call their delta functions
+        for each_neighbor in self.neighbors.keys():
+
+            x_adjust = self.x - each_neighbor.x
+            y_adjust = self.y - each_neighbor.y
+            angle_to_self = math.atan(x_adjust / y_adjust)
+
+            # Prevent a divide by 0 error in angle calcs
+            if each_neighbor.wind_vector.y == 0:
+                if each_neighbor.wind_vector.x >= 0.0:
+                    neighbor_wind_angle = 0
+                else:
+                    neighbor_wind_angle = math.pi
+            else:
+                neighbor_wind_angle = math.atan(each_neighbor.wind_vector.x /
+                                                each_neighbor.wind_vector.y)
+            neighbor_wind_angle = abs(neighbor_wind_angle - angle_to_self)
+            if neighbor_wind_angle < stg.wind_critical_angle:
+                wind_multiplier = (1 / stg.wind_critical_angle) * neighbor_wind_angle
+                temps_multiplier = (1 / stg.temps_critical_angle) * neighbor_wind_angle
+                self.wind_vector_delta += each_neighbor.take_wind(wind_multiplier)
+                self.pressure_delta += each_neighbor.take_baro(wind_multiplier, self)
+                self.temperature_delta += each_neighbor.take_temp(temps_multiplier, self)
+
+        # Adds the equatorial jet stream and heating
+        if abs(self.y) < stg.atmo_tropics_extent:
+            self.wind_vector_delta += stg.wind_streams_vector * (abs(self.y) / stg.atmo_tropics_extent)
+
+            # Only heat if below the target temp for the equator
+            if self.temperature < self.settings.temps_equatorial:
+                self.temperature_delta += stg.temps_equatorial_rise * (abs(self.y) / stg.atmo_tropics_extent)
+
+        # Same process but inverted for the arctic zones, jetstreams run backwards here
+        elif abs(self.y) > k_map.far_y - stg.atmo_arctic_extent:
+            self.wind_vector_delta -= stg.wind_streams_vector * \
+                                ((abs(self.y) - (k_map.far_y - stg.atmo_arctic_extent)) / stg.atmo_arctic_extent)
+            self.temperature_delta -= stg.temps_arctic_cooling * \
+                                ((abs(self.y) - (k_map.far_y - stg.atmo_arctic_extent)) / stg.atmo_arctic_extent)
+
+        # Apply radiant atmospheric cooling
+        self.temperature_delta -= stg.temps_natural_cooling
+
+        # Apply the terrain deflection value generated by the cell, if it is above sea level
+        if self.altitude > stg.wtr_sea_level:
+            self.wind_vector_delta += self.wind_deflection * stg.wind_deflection_weight
+
+    def update_atmosphere(self):
+        """Using the previously calculated data, update the atmosphere to reflect those changes."""
+
+        # Wind
+        self.wind_vector = self.wind_vector_delta
+        self.wind_vector_delta = self.wind_vector
+
+        # if the wind is stronger than the soft cap, it is reduced by wind_res * (wind speed - the soft cap)
+        if self.wind_vector.magnitude() > self.settings.wind_soft_cap:
+            modifier = self.wind_vector.magnitude() - self.settings.wind_soft_cap
+            modifier *= self.settings.wind_resistance
+            self.wind_vector.scale_to_length(self.wind_vector.magnitude() - modifier)
+
+        # If still stronger than the hard cap, clamp it
+        if self.wind_vector.magnitude() > self.settings.wind_hard_cap:
+            self.wind_vector.scale_to_length(self.settings.wind_hard_cap)
+
+        # Temps
+        self.temperature += self.temperature_delta
+        self.temperature_delta = 0
+
+        if self.temperature < self.settings.temps_lowest:
+            self.temperature = self.settings.temps_lowest
+        elif self.temperature > self.settings.temps_highest:
+            self.temperature = self.settings.temps_highest
+
+        # Baro
+        self.pressure += self.pressure_delta
+        self.pressure_delta = 0.0
+        if self.pressure >= 1.0:
+            self.pressure = 0.999
+        elif self.pressure <= -1.0:
+            self.pressure = -0.999
+
+    def update(self, renderer):
         """The update function of the Cell as a Renderable object. Calls to pygame to draw the cell."""
         # If the polygon is None, then this item has never run before, calculate the polygon
         if self.polygon is None:
-            project = settings.project_to_screen
-            settings.db_print(f"calculating polygon for Cell at {self.x}, {self.y},"
+            project = self.settings.project_to_screen
+            self.settings.db_print(f"calculating polygon for Cell at {self.x}, {self.y},"
                               f"projects to {project(self.x, self.y, )}", detail=5)
             self.polygon = []
 
-            # Takes each vertex and projects it from a range of -1.0 to 1.0 to fit the screen size
+            # Takes each vertex and projects it to fit the screen size
             for each_vertex in self.region.keys():
                 self.polygon.append(project(each_vertex.x, each_vertex.y))
 
             # Calculate the color
-            self.cell_color = (200 * self.altitude, 127 + 128 * self.altitude, 200 * self.altitude)
+            self.find_color()
 
-        # Now we can render the shape
-        if self.altitude > settings.wtr_sea_level:
-            pygame.draw.polygon(surface, self.cell_color, self.polygon, 0)
-        else:
-            pygame.draw.polygon(surface, (0, 64, 196), self.polygon, 0)
+        # Now we can render the shape if we are in the CellQ
+        if renderer.label == 'cell':
+            if self.altitude > self.settings.wtr_sea_level:
+                pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
+            else:
+                pygame.draw.polygon(renderer.screen, (0, 64, 196), self.polygon, 0)
 
-        # Also render the wind redirection vector
-        # pygame.draw.line(surface, (100, 0, 0), (self.ss_x, self.ss_y), (self.ss_x + self.wind_deflection.x * 1000, self.ss_y + self.wind_deflection.y * 1000), 2)
-        # pygame.draw.circle(surface, (0, 0, 0), (self.ss_x, self.ss_y), 3)
+        # Render the wind vector if we are in the AtmosphereQ
+        if renderer.label == 'atmosphere':
+            temp_as_percent = (self.temperature - self.settings.temps_lowest) \
+                              / abs(self.settings.temps_equatorial - self.settings.temps_lowest)
+            if temp_as_percent > 1.0:
+                temp_as_percent = 1.0
+            if temp_as_percent < 0.0:
+                temp_as_percent = 0.0
+
+            pygame.draw.line(renderer.screen, (255 * temp_as_percent,
+                                               128 - abs(128 - 255 * temp_as_percent),
+                                               255 - 255 * temp_as_percent),
+                             (self.ss_x, self.ss_y),
+                             (self.ss_x + self.wind_vector.x * (self.settings.screen_size[0] / 40),
+                              self.ss_y + self.wind_vector.y * (self.settings.screen_size[1] / 40)), 1)
+
+            pressure_color = 32 + 111 * (self.pressure + 1)
+            pygame.draw.circle(renderer.screen, (pressure_color, pressure_color, pressure_color),
+                               (self.ss_x, self.ss_y), 3)
 
 
 class Vertex(Renderable):
@@ -157,14 +361,14 @@ class Vertex(Renderable):
             distance = get_distance(self, vertex)
             self.neighbors[vertex] = distance
 
-    def update(self, surface, settings):
+    def update(self, renderer):
         """Update call for the Vertex."""
         if self.ss_x is None:
-            self.ss_x, self.ss_y = settings.project_to_screen(self.x, self.y)
+            self.ss_x, self.ss_y = renderer.settings.project_to_screen(self.x, self.y)
             self.color = (255 * self.altitude, 255 * self.altitude, 255 * self.altitude)
 
-        if self.altitude > settings.wtr_sea_level:
-            pygame.draw.circle(surface, self.color, (self.ss_x, self.ss_y), 3)
+        if self.altitude > renderer.settings.wtr_sea_level:
+            pygame.draw.circle(renderer.screen, self.color, (self.ss_x, self.ss_y), 3)
 
 
 class Path:

@@ -45,12 +45,15 @@ class KhaosMap:
 
         dbprint("Extrapolating altitudes to cells...", detail=3)
         for each_cell in self.cells:
-            each_cell.find_screen_space(self.settings)
+            each_cell.find_screen_space()
             each_cell.find_altitude()
             each_cell.find_wind_deflection()
 
-        # TODO Wind patterns, rainfall
-        # TODO Temperature
+        dbprint("Getting windy...", detail=3)
+        for iteration in range(0, self.settings.wind_presim):
+            self.update_atmosphere()
+
+        # TODO Rainfall, Temperature
 
     def gen_vor(self):
         """Generates a voronoi diagram and passes it through several relax iterations as decided in the settings."""
@@ -82,7 +85,7 @@ class KhaosMap:
             if abs(each_point[0]) == 2.0 or abs(each_point[1]) == 2.0:
                 continue
             else:
-                cells.append(Cell(each_point))
+                cells.append(Cell(each_point, self.settings))
 
         for each_vertex in vor.vertices:
             vertices.append(Vertex(each_vertex))
@@ -288,9 +291,14 @@ class KhaosMap:
             if each_vertex.altitude < 0.0:
                 each_vertex.altitude = 0.0
 
-    def update_wind(self):
+    def update_atmosphere(self):
         """Updates the map-wide airflow by a single tick."""
 
+        for each_cell in self.cells:
+            each_cell.calculate_atmosphere_update(self)
+
+        for each_cell in self.cells:
+            each_cell.update_atmosphere()
 
 def lloyds_relax(vor):
     """Applies Lloyd's algorithm to the given voronoi diagram, finding the centroid of each region and then passing

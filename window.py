@@ -16,24 +16,39 @@ class PyGameWindow:
         self.screen = pygame.display.set_mode(self.settings.screen_size)
         pygame.display.set_caption("Khaos Map Generator")
 
-        # Create controls
+        # Create controls and clock
         self.controls = KeyStrokes(self.settings)
+        self.clock = pygame.time.Clock()
 
-        # Create the RenderQs and add the elements from the map to them
-        self.cellQ = RenderQ(self.screen, self.settings)
+        # Create the RenderQs
+        self.cellQ = RenderQ(self.screen, self.settings, 'cell')
+        self.atmosphereQ = RenderQ(self.screen, self.settings, 'atmosphere')
+        self.vertexQ = RenderQ(self.screen, self.settings, 'vertex')
+
+        # Add the elements from the map to them
         for each_cell in self.map.cells:
             self.cellQ.add(each_cell)
+            self.atmosphereQ.add(each_cell)
 
-        self.vertexQ = RenderQ(self.screen, self.settings)
         for each_vertex in self.map.vertices:
             self.vertexQ.add(each_vertex)
 
     def main_loop(self):
         """Main loop that calls all the update functions for the subsidiary objects"""
         while not self.controls.ctrl_bools['exit']:
+            # Update controls and tick the clock to cap the framerate
             self.controls.update()
+            self.clock.tick(self.settings.framerate)
+
+            # Update wind
+            self.map.update_atmosphere()
+
+            # Update the renderQs
             self.cellQ.update()
             self.vertexQ.update()
+            self.atmosphereQ.update()
+
+            # Flip the screen
             pygame.display.flip()
 
 
@@ -43,20 +58,25 @@ class KeyStrokes:
         self.settings = settings
 
         self.controls = {'exit': [pygame.K_ESCAPE],
-                         'confirm': [pygame.K_SPACE, pygame.K_RETURN]}
+                         'confirm': [pygame.K_SPACE, pygame.K_RETURN],
+                         }
 
         self.ctrl_bools = {'exit': False,
-                           'confirm': False}
+                           'confirm': False,
+                           }
 
     def update(self):
         for event in pygame.event.get():
+
             if event.type == pygame.QUIT:
                 sys.exit()
+
             elif event.type == pygame.KEYDOWN:
                 if event.key in self.controls['exit']:
                     self.ctrl_bools['exit'] = True
                 elif event.key in self.controls['confirm']:
                     self.ctrl_bools['confirm'] = True
+
             elif event.type == pygame.KEYUP:
                 if event.key in self.controls['exit']:
                     self.ctrl_bools['exit'] = False
@@ -65,7 +85,7 @@ class KeyStrokes:
 
 
 if __name__ == "__main__":
-    # Create a map
+    # Create or load a map
     khaos_map = KhaosMap()
 
     # Initialize window
@@ -74,8 +94,8 @@ if __name__ == "__main__":
     if not khaos_map.settings.do_render_vertices:
         window.vertexQ.disable = True
 
-    for each_vertex in khaos_map.vertices:
-        khaos_map.settings.db_print(f"{each_vertex.x}, {each_vertex.y}, {each_vertex.altitude}")
+    if not khaos_map.settings.do_render_atmosphere:
+        window.atmosphereQ.disable = True
 
     # Run the renderer window
     window.main_loop()
