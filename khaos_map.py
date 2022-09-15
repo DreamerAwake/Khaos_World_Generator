@@ -3,6 +3,7 @@ import scipy.spatial as sptl
 
 from cells import *
 from settings import *
+from window import TextBox
 
 
 class KhaosMap:
@@ -11,6 +12,7 @@ class KhaosMap:
         # Instantiates a settings object
         self.settings = Settings()
         self.settings.map = self
+        self.display_text = TextBox(self.settings)
         dbprint = self.settings.db_print
 
         # Generates the initial voronoi object and runs the lloyds relaxation to regularize the cell sizes.
@@ -20,6 +22,7 @@ class KhaosMap:
         # Uses the voronoi diagram to produce the Cell and Vertex objects for the map.
         dbprint("Creating map objects...")
         self.cells, self.vertices = self.gen_map_objs(self.voronoi)
+        self.focus_cell = None
 
         # Find the furthest x and y coordinates in the voronoi at this point, store them for later.
         self.far_x, self.far_y = self.get_furthest_members()

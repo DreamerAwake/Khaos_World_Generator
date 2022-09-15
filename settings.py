@@ -1,4 +1,5 @@
 from pygame.math import Vector2
+from pygame.font import Font
 import numpy.random
 import random
 
@@ -9,7 +10,7 @@ class Settings:
         self.map = None
 
         # Set the random seed
-        self.seed = 33
+        self.seed = 34
         numpy.random.seed(self.seed)
         random.seed(self.seed)
 
@@ -18,13 +19,18 @@ class Settings:
         self.debug_detail = 0       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
 
         # Pygame settings
-        self.screen_size = (1800, 1000)
-        self.framerate = 60
+        self.window_size = (1100, 750)
+        self.screen_size = (self.window_size[0], self.window_size[1] - 200)
+        self.framerate = 30
         self.do_render_vertices = False
         self.do_render_atmosphere = True
 
+        # Text settings
+        self.font_size = 24
+        self.font_body = Font('fonts/consola.ttf', self.font_size)
+
         # Voronoi generation settings
-        self.total_cells = 2500
+        self.total_cells = 2000
         self.relax_passes = 5
 
         # Terrain generation settings

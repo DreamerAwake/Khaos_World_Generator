@@ -270,6 +270,14 @@ class Cell(Renderable):
         elif self.pressure <= -1.0:
             self.pressure = -0.999
 
+    def write(self):
+        """Method returns a string containing all the info about the cell for output into a textbox."""
+        output = f"This cell is at {self.x}, {self.y}.\n"
+        output += f"Local Altitude: {self.altitude}, Temperature: {self.temperature}, Pressure {self.pressure}\n"
+        output += f"Wind Angle: {math.atan(self.wind_vector.x / self.wind_vector.y)}, Magnitude: {self.wind_vector.magnitude()}"
+
+        return output
+
     def update(self, renderer):
         """The update function of the Cell as a Renderable object. Calls to pygame to draw the cell."""
         # If the polygon is None, then this item has never run before, calculate the polygon
