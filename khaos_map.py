@@ -3,7 +3,7 @@ import scipy.spatial as sptl
 
 from cells import *
 from settings import *
-from window import TextBox
+from my_pygame_functions import TextBox
 
 
 class KhaosMap:
@@ -12,8 +12,13 @@ class KhaosMap:
         # Instantiates a settings object
         self.settings = Settings()
         self.settings.map = self
+
+        dbprint = self.settings.db_print  # alias
+
+        # Instantiates the text box object
         self.display_text = TextBox(self.settings)
-        dbprint = self.settings.db_print
+        self.display_text.place_text_box((self.settings.screen_size[0], 0), 50, self.settings.text_box_width, 12)
+        self.display_text.enable_bg((255, 255, 200))
 
         # Generates the initial voronoi object and runs the lloyds relaxation to regularize the cell sizes.
         dbprint("Generating voronoi diagram...")
@@ -132,7 +137,7 @@ class KhaosMap:
 
                 # Decide if the ridge will fork
                 if random.random() < self.settings.mtn_fork_chance:
-                    dbprint(f"Forking at {each_vertex.x}, {each_vertex.y}")
+                    dbprint(f"Forking at {each_vertex.x}, {each_vertex.y}", detail=4)
                     self.get_next_ridge(each_vertex, opened, closed)
                     self.get_next_ridge(each_vertex, opened, closed)
                     total_nodes += 2
@@ -302,6 +307,11 @@ class KhaosMap:
 
         for each_cell in self.cells:
             each_cell.update_atmosphere()
+
+    def update_textbox(self):
+        """Updates the textbox to reflect the current focus cell of the map."""
+        if self.focus_cell is not None:
+            self.display_text.write(self.focus_cell.write())
 
 def lloyds_relax(vor):
     """Applies Lloyd's algorithm to the given voronoi diagram, finding the centroid of each region and then passing

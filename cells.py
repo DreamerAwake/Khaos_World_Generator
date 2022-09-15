@@ -40,6 +40,7 @@ class Cell(Renderable):
         # Rendering Settings
         self.polygon = None
         self.cell_color = (0, 64, 0)
+        self.is_focus = False
 
     def find_altitude(self):
         """Finds the average altitude of the vertices and makes it the total altitude of the cell"""
@@ -177,9 +178,14 @@ class Cell(Renderable):
 
     def take_temp(self, temp_multiplier, source):
         """Given a wind_multiplier between 1 and 0, returns the change in temperature affected on the source cell."""
-        # TODO fix this WTF
         delta = ((self.temperature - self.settings.temps_lowest + self.temperature_delta) -
                  (source.temperature - self.settings.temps_lowest + source.temperature_delta)) * temp_multiplier
+
+        # Set the bias toward heat/cold
+        if delta >= 0.0:
+            delta *= self.settings.temps_heat_bias
+        else:
+            delta /= self.settings.temps_heat_bias
 
         self.temperature_delta -= delta
 
@@ -272,9 +278,9 @@ class Cell(Renderable):
 
     def write(self):
         """Method returns a string containing all the info about the cell for output into a textbox."""
-        output = f"This cell is at {self.x}, {self.y}.\n"
-        output += f"Local Altitude: {self.altitude}, Temperature: {self.temperature}, Pressure {self.pressure}\n"
-        output += f"Wind Angle: {math.atan(self.wind_vector.x / self.wind_vector.y)}, Magnitude: {self.wind_vector.magnitude()}"
+        output = f"This cell is at {round(self.x, 3)}, {round(self.y, 3)}. * * "
+        output += f"Local Altitude: {round(self.altitude, 3)} * Temperature: {round(self.temperature, 1)} * Pressure {round(self.pressure, 3)} * "
+        output += f"Wind Angle: {round(math.atan(self.wind_vector.x / self.wind_vector.y), 3)}, Magnitude: {round(self.wind_vector.magnitude(), 2)}"
 
         return output
 
@@ -303,16 +309,22 @@ class Cell(Renderable):
 
         # Render the wind vector if we are in the AtmosphereQ
         if renderer.label == 'atmosphere':
-            temp_as_percent = (self.temperature - self.settings.temps_lowest) \
-                              / abs(self.settings.temps_equatorial - self.settings.temps_lowest)
+
+            # Also render a border on the cell if it is currently selected as the map's focus
+            if self.is_focus:
+                pygame.draw.polygon(renderer.screen, (0, 0, 0), self.polygon, 3)
+
+            # Actual atmosphere rendering begins here
+            temp_as_percent = (self.temperature - self.settings.temps_freezing) \
+                              / abs(self.settings.temps_equatorial - self.settings.temps_freezing)
             if temp_as_percent > 1.0:
                 temp_as_percent = 1.0
             if temp_as_percent < 0.0:
                 temp_as_percent = 0.0
 
-            pygame.draw.line(renderer.screen, (255 * temp_as_percent,
-                                               128 - abs(128 - 255 * temp_as_percent),
-                                               255 - 255 * temp_as_percent),
+            pygame.draw.line(renderer.screen, (200 * temp_as_percent,
+                                               128 - abs(128 - 14 ** (1 + temp_as_percent)),
+                                               255 - 200 * temp_as_percent),
                              (self.ss_x, self.ss_y),
                              (self.ss_x + self.wind_vector.x * (self.settings.screen_size[0] / 40),
                               self.ss_y + self.wind_vector.y * (self.settings.screen_size[1] / 40)), 1)
