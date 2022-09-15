@@ -8,6 +8,7 @@ from render import *
 class Cell(Renderable):
     """Stores information about a single cell, which has a generator point treated as a pseudo-center and a region
     formed of shared edge vertices with its neighbor cells."""
+
     def __init__(self, point, settings):
         super().__init__()
 
@@ -23,9 +24,16 @@ class Cell(Renderable):
         # Associated Terrain data
         self.altitude = 0.0
         self.wind_deflection = None
-
         self.wind_vector = pygame.math.Vector2(0, 0)
         self.temperature = (settings.temps_equatorial + settings.temps_lowest) / 2
+        self.humidity = 0.0
+
+        # Rainfall data
+        self.rainfall_this_year = 0
+        self.rainfall_last_year = 0
+        self.watertable = 0
+
+        # Set pressure based on location on the map, northern climes start with low pressure
         if abs(self.y) > 1.2 - self.settings.atmo_arctic_extent:
             self.pressure = -0.2
         elif abs(self.y) < self.settings.atmo_tropics_extent:
@@ -33,9 +41,11 @@ class Cell(Renderable):
         else:
             self.pressure = 0.01
 
+        # The delta values for atmosphere calculation
         self.wind_vector_delta = pygame.math.Vector2(0, 0)
         self.temperature_delta = 0
         self.pressure_delta = 0
+        self.humidity_delta = 0.0
 
         # Rendering Settings
         self.polygon = None
@@ -170,9 +180,18 @@ class Cell(Renderable):
         delta = self.wind_vector * wind_multiplier * self.settings.wind_take_strength
 
         # Local pressure affects the transfer rate of the wind
-        delta *= self.pressure + 1
+        delta *= ((self.pressure + self.settings.baro_wind_effect + 1) / self.settings.baro_wind_effect + 1) * self.settings.baro_wind_effect
 
         self.wind_vector_delta -= delta
+
+        return delta
+
+    def take_humidity(self, humidity_multiplier, source):
+        """Given a humidity_multiplier between 1 and 0, returns a number to be added to the source,
+        automatically reducing its own delta by the same amount."""
+
+        delta = (self.humidity + self.humidity_delta) * humidity_multiplier * \
+                (1 - source.humidity + source.humidity_delta)
 
         return delta
 
@@ -213,27 +232,35 @@ class Cell(Renderable):
                 neighbor_wind_angle = math.atan(each_neighbor.wind_vector.x /
                                                 each_neighbor.wind_vector.y)
             neighbor_wind_angle = abs(neighbor_wind_angle - angle_to_self)
+
+            # Check wind angle, create a multiplier and pass it to the individual atmosphere calcs in the cell
             if neighbor_wind_angle < stg.wind_critical_angle:
                 wind_multiplier = (1 / stg.wind_critical_angle) * neighbor_wind_angle
-                temps_multiplier = (1 / stg.temps_critical_angle) * neighbor_wind_angle
                 self.wind_vector_delta += each_neighbor.take_wind(wind_multiplier)
                 self.pressure_delta += each_neighbor.take_baro(wind_multiplier, self)
+                self.humidity_delta += each_neighbor.take_humidity(wind_multiplier, self)
+
+            if neighbor_wind_angle < stg.temps_critical_angle:
+                temps_multiplier = (1 / stg.temps_critical_angle) * neighbor_wind_angle
                 self.temperature_delta += each_neighbor.take_temp(temps_multiplier, self)
 
+
         # Adds the equatorial jet stream and heating
-        if abs(self.y) < stg.atmo_tropics_extent:
-            self.wind_vector_delta += stg.wind_streams_vector * (abs(self.y) / stg.atmo_tropics_extent)
+        if abs(self.y + stg.season_ticks_modifier) < stg.atmo_tropics_extent:
+            self.wind_vector_delta += stg.wind_streams_vector * \
+                                      (abs(self.y + stg.season_ticks_modifier) / stg.atmo_tropics_extent)
 
             # Only heat if below the target temp for the equator
             if self.temperature < self.settings.temps_equatorial:
-                self.temperature_delta += stg.temps_equatorial_rise * (abs(self.y) / stg.atmo_tropics_extent)
+                self.temperature_delta += stg.temps_equatorial_rise * \
+                                          (abs(self.y + stg.season_ticks_modifier) / stg.atmo_tropics_extent)
 
         # Same process but inverted for the arctic zones, jetstreams run backwards here
-        elif abs(self.y) > k_map.far_y - stg.atmo_arctic_extent:
+        elif abs(self.y + stg.season_ticks_modifier) > k_map.far_y - stg.atmo_arctic_extent:
             self.wind_vector_delta -= stg.wind_streams_vector * \
-                                ((abs(self.y) - (k_map.far_y - stg.atmo_arctic_extent)) / stg.atmo_arctic_extent)
+                                      ((abs(self.y + stg.season_ticks_modifier) - (k_map.far_y - stg.atmo_arctic_extent)) / stg.atmo_arctic_extent)
             self.temperature_delta -= stg.temps_arctic_cooling * \
-                                ((abs(self.y) - (k_map.far_y - stg.atmo_arctic_extent)) / stg.atmo_arctic_extent)
+                                      ((abs(self.y + stg.season_ticks_modifier) - (k_map.far_y - stg.atmo_arctic_extent)) / stg.atmo_arctic_extent)
 
         # Apply radiant atmospheric cooling
         self.temperature_delta -= stg.temps_natural_cooling
@@ -241,6 +268,14 @@ class Cell(Renderable):
         # Apply the terrain deflection value generated by the cell, if it is above sea level
         if self.altitude > stg.wtr_sea_level:
             self.wind_vector_delta += self.wind_deflection * stg.wind_deflection_weight
+
+        # Add rising water vapor over the oceans to both the humidity and pressure of the cell
+        else:
+            # Create a ratio of the current temp of the cell compared to the range of temps from max to freezing
+            temps_multiplier = self.temperature + self.temperature_delta - stg.temps_freezing \
+                               / (stg.temps_highest - stg.temps_freezing)
+            self.pressure_delta += stg.wtr_baro_evap_rate * temps_multiplier
+            self.humidity_delta += stg.wtr_humid_evap_rate * temps_multiplier
 
     def update_atmosphere(self):
         """Using the previously calculated data, update the atmosphere to reflect those changes."""
@@ -263,10 +298,34 @@ class Cell(Renderable):
         self.temperature += self.temperature_delta
         self.temperature_delta = 0
 
+        # Apply altitude based cooling
+        altct = self.settings.temps_alt_cooling_threshold    # alias
+
+        if self.altitude > altct:
+            self.temperature -= ((self.altitude - altct) / (1 - altct)) * self.settings.temps_alt_cooling
+
         if self.temperature < self.settings.temps_lowest:
             self.temperature = self.settings.temps_lowest
         elif self.temperature > self.settings.temps_highest:
             self.temperature = self.settings.temps_highest
+
+        # Drop a percentage of moisture based on current altitude and temperature
+        temps_mod = abs((self.temperature - self.settings.temps_freezing) - self.settings.temps_highest) / \
+                    (self.settings.temps_highest - self.settings.temps_freezing)
+        rainfall = (self.humidity + self.humidity_delta) * (2 * self.altitude) * temps_mod
+        self.humidity_delta -= rainfall
+        self.pressure_delta -= rainfall
+        self.rainfall_this_year += rainfall * self.settings.wtr_rainfall_mod
+
+        # Moisture
+        self.humidity += self.humidity_delta
+        self.humidity_delta = 0.0
+
+        # Clamp to 0 - 1
+        if self.humidity > 1.0:
+            self.humidity = 1.0
+        elif self.humidity < 0.0:
+            self.humidity = 0.0
 
         # Baro
         self.pressure += self.pressure_delta
@@ -279,8 +338,12 @@ class Cell(Renderable):
     def write(self):
         """Method returns a string containing all the info about the cell for output into a textbox."""
         output = f"This cell is at {round(self.x, 3)}, {round(self.y, 3)}. * * "
-        output += f"Local Altitude: {round(self.altitude, 3)} * Temperature: {round(self.temperature, 1)} * Pressure {round(self.pressure, 3)} * "
-        output += f"Wind Angle: {round(math.atan(self.wind_vector.x / self.wind_vector.y), 3)}, Magnitude: {round(self.wind_vector.magnitude(), 2)}"
+        output += f"Local Altitude: {round(self.altitude, 3)} * Temperature: {round(self.temperature, 1)} * "
+        output += f"Humidity {round(self.humidity, 2)} * Pressure: {round(self.pressure, 3)} * "
+        output += f"Wind Angle: {round(math.atan(self.wind_vector.x / self.wind_vector.y), 3)}, "
+        output += f"Magnitude: {round(self.wind_vector.magnitude(), 2)} * * "
+        output += f"Rainfall this year: {round(self.rainfall_this_year, 2)} * "
+        output += f"Rainfall last year: {round(self.rainfall_last_year, 2)} * "
 
         return output
 
@@ -290,7 +353,7 @@ class Cell(Renderable):
         if self.polygon is None:
             project = self.settings.project_to_screen
             self.settings.db_print(f"calculating polygon for Cell at {self.x}, {self.y},"
-                              f"projects to {project(self.x, self.y, )}", detail=5)
+                                   f"projects to {project(self.x, self.y, )}", detail=5)
             self.polygon = []
 
             # Takes each vertex and projects it to fit the screen size
@@ -300,19 +363,38 @@ class Cell(Renderable):
             # Calculate the color
             self.find_color()
 
+        # Refind color at the beginning of each season
+        if self.settings.season_ticks_this_year == 0:
+            self.find_color()
+        elif self.settings.season_ticks_this_year == round(self.settings.season_ticks_per_year * 0.25):
+            self.find_color()
+        elif self.settings.season_ticks_this_year == round(self.settings.season_ticks_per_year * 0.5):
+            self.find_color()
+        elif self.settings.season_ticks_this_year == round(self.settings.season_ticks_per_year * 0.75):
+            self.find_color()
+
         # Now we can render the shape if we are in the CellQ
         if renderer.label == 'cell':
             if self.altitude > self.settings.wtr_sea_level:
-                pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
+                # If render rainfall is on, mix the colors with the rainfall colors
+                if self.settings.do_render_rainfall:
+                    if self.rainfall_last_year == 0:
+                        rainfall_mod = self.rainfall_this_year / 1000
+                    else:
+                        rainfall_mod = self.rainfall_last_year / 1000
+                    if rainfall_mod > 1:
+                        rainfall_mod = 1
+                    rainfall_mod *= 255
+                    pygame.draw.polygon(renderer.screen, ((self.cell_color[0] + rainfall_mod / 2) / 2,
+                                                          (self.cell_color[1] + rainfall_mod / 2) / 2,
+                                                          (self.cell_color[2] + rainfall_mod) / 2), self.polygon, 0)
+                else:
+                    pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
             else:
-                pygame.draw.polygon(renderer.screen, (0, 64, 196), self.polygon, 0)
+                pygame.draw.polygon(renderer.screen, (64, 64, 128), self.polygon, 0)
 
         # Render the wind vector if we are in the AtmosphereQ
-        if renderer.label == 'atmosphere':
-
-            # Also render a border on the cell if it is currently selected as the map's focus
-            if self.is_focus:
-                pygame.draw.polygon(renderer.screen, (0, 0, 0), self.polygon, 3)
+        elif renderer.label == 'atmosphere':
 
             # Actual atmosphere rendering begins here
             temp_as_percent = (self.temperature - self.settings.temps_freezing) \
@@ -326,17 +408,22 @@ class Cell(Renderable):
                                                128 - abs(128 - 14 ** (1 + temp_as_percent)),
                                                255 - 200 * temp_as_percent),
                              (self.ss_x, self.ss_y),
-                             (self.ss_x + self.wind_vector.x * (self.settings.screen_size[0] / 40),
-                              self.ss_y + self.wind_vector.y * (self.settings.screen_size[1] / 40)), 1)
+                             (self.ss_x + self.wind_vector.x * (self.settings.screen_size[0] / 35),
+                              self.ss_y + self.wind_vector.y * (self.settings.screen_size[1] / 35)), 1)
 
             pressure_color = 32 + 111 * (self.pressure + 1)
             pygame.draw.circle(renderer.screen, (pressure_color, pressure_color, pressure_color),
                                (self.ss_x, self.ss_y), 3)
 
+        # Render the border in the guiQ if self is the focus cell
+        elif renderer.label == 'gui' and self.is_focus:
+            pygame.draw.polygon(renderer.screen, (0, 0, 0), self.polygon, 3)
+
 
 class Vertex(Renderable):
     """A single vertex defining a number of the voronoi ridges. Offers a point sample of the map where much of the
     terrain data is stored and maintained. Vertices along with the generator point are the constituents of a Cell."""
+
     def __init__(self, point):
         super().__init__()
 
@@ -393,6 +480,7 @@ class Vertex(Renderable):
 
 class Path:
     """Paths contains a list of a line of Vertices and or Cells. This is used for many functions of the generator."""
+
     def __init__(self, starting_position):
         # Path variables
         self.path = [starting_position]

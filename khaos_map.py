@@ -3,7 +3,6 @@ import scipy.spatial as sptl
 
 from cells import *
 from settings import *
-from my_pygame_functions import TextBox
 
 
 class KhaosMap:
@@ -12,13 +11,10 @@ class KhaosMap:
         # Instantiates a settings object
         self.settings = Settings()
         self.settings.map = self
+        self.display_text = None
+        self.season_text = None
 
         dbprint = self.settings.db_print  # alias
-
-        # Instantiates the text box object
-        self.display_text = TextBox(self.settings)
-        self.display_text.place_text_box((self.settings.screen_size[0], 0), 50, self.settings.text_box_width, 12)
-        self.display_text.enable_bg((255, 255, 200))
 
         # Generates the initial voronoi object and runs the lloyds relaxation to regularize the cell sizes.
         dbprint("Generating voronoi diagram...")
@@ -249,6 +245,26 @@ class KhaosMap:
 
         return slopes
 
+    def get_season(self):
+        """Returns the current season as a string."""
+        year_ratio = self.settings.season_ticks_this_year / self.settings.season_ticks_per_year
+        if year_ratio < 0.25:
+            return 'spring'
+        elif year_ratio < 0.5:
+            return 'summer'
+        elif year_ratio < 0.75:
+            return 'autumn'
+        else:
+            return 'winter'
+
+    def end_year(self):
+        """Ends the year by resetting all rainfall trackers in cells and setting a few flags."""
+        self.settings.season_ticks_this_year = 0
+
+        for each_cell in self.cells:
+            each_cell.rainfall_last_year = each_cell.rainfall_this_year
+            each_cell.rainfall_this_year = 0
+
     def smooth_altitudes(self, resolution):
         """Smooths out the altitudes on the map by finding an average of the surrounding vertices to a sample distance
         equal to the resolution. Builds a list of smoothed altitudes first, then applies them to prevent changes from
@@ -301,6 +317,8 @@ class KhaosMap:
 
     def update_atmosphere(self):
         """Updates the map-wide airflow by a single tick."""
+        # Set the current season modifier
+        self.settings.find_season_multi(self.settings.season_ticks_this_year/self.settings.season_ticks_per_year)
 
         for each_cell in self.cells:
             each_cell.calculate_atmosphere_update(self)
@@ -308,10 +326,18 @@ class KhaosMap:
         for each_cell in self.cells:
             each_cell.update_atmosphere()
 
+        # Update the season ticks, reset the season tick counter if necessary
+        self.settings.season_ticks_this_year += 1
+        if self.settings.season_ticks_this_year > self.settings.season_ticks_per_year:
+            self.end_year()
+
     def update_textbox(self):
         """Updates the textbox to reflect the current focus cell of the map."""
         if self.focus_cell is not None:
             self.display_text.write(self.focus_cell.write())
+
+        self.season_text.write(self.get_season().title())
+
 
 def lloyds_relax(vor):
     """Applies Lloyd's algorithm to the given voronoi diagram, finding the centroid of each region and then passing

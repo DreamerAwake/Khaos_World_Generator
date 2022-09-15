@@ -1,11 +1,14 @@
 import pygame
 import math
+from render import Renderable
 
 
-class TextBox:
+class TextBox(Renderable):
     def __init__(self, settings):
         """This class draws a text box with updateable text."""
+        super().__init__()
         self.settings = settings
+        self.do_center_text = False
 
         self.number_of_lines = 0
         self.width = 0
@@ -97,7 +100,11 @@ class TextBox:
         for line in self.current_text_list:
 
             font_surface = self.font.render(line, False, self.color)
-            renderer.screen.blit(font_surface, (self.rect.left, self.rect.top + line_offset))
+            if self.do_center_text:
+                renderer.screen.blit(font_surface, (self.rect.left + (self.rect.width / 2) -
+                                                    (self.font.size(line)[0] / 2), self.rect.top + line_offset))
+            else:
+                renderer.screen.blit(font_surface, (self.rect.left, self.rect.top + line_offset))
             line_offset += self.letter_size[1] + self.line_spacing
 
 
@@ -149,6 +156,7 @@ def load_each_from_sheet(game, sheet_filespace, tile_size, last_index, is_alpha=
             img_list.append(img_scaled)
 
     return img_list
+
 
 def is_point_in_polygon(point, polygon):
     """Given a point (a tuple of int, int) and a polygon (an iterable of (int, int)s), determines if the point falls
