@@ -99,10 +99,10 @@ class TextBox(Renderable):
         line_offset = 0
         for line in self.current_text_list:
 
-            font_surface = self.font.render(line, False, self.color)
+            font_surface = self.font.render(line, True, self.color)
             if self.do_center_text:
                 renderer.screen.blit(font_surface, (self.rect.left + (self.rect.width / 2) -
-                                                    (self.font.size(line)[0] / 2), self.rect.top + line_offset))
+                                                            (self.font.size(line)[0] / 2), self.rect.top + line_offset))
             else:
                 renderer.screen.blit(font_surface, (self.rect.left, self.rect.top + line_offset))
             line_offset += self.letter_size[1] + self.line_spacing

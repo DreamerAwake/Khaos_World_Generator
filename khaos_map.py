@@ -52,12 +52,16 @@ class KhaosMap:
             each_cell.find_screen_space()
             each_cell.find_altitude()
             each_cell.find_wind_deflection()
+            each_cell.find_lowest_vertex()
+
+        for each_vertex in self.vertices:
+            each_vertex.find_lowest_neighbor()
 
         dbprint("Getting windy...", detail=3)
         for iteration in range(0, self.settings.wind_presim):
             self.update_atmosphere()
 
-        # TODO Rainfall, Temperature
+        # TODO Erosion, rivers
 
     def gen_vor(self):
         """Generates a voronoi diagram and passes it through several relax iterations as decided in the settings."""
@@ -84,6 +88,7 @@ class KhaosMap:
         vertices = []
 
         # Fills both of the lists with objects which can then be further worked with
+        self.settings.db_print("Creating Cells...", detail=1)
         for each_point in vor.points:
             # Ignores the bounding points added in the generation step
             if abs(each_point[0]) == 2.0 or abs(each_point[1]) == 2.0:
@@ -91,14 +96,17 @@ class KhaosMap:
             else:
                 cells.append(Cell(each_point, self.settings))
 
+        self.settings.db_print("Creating Vertices...", detail=1)
         for each_vertex in vor.vertices:
             vertices.append(Vertex(each_vertex))
 
         # Runs the functions to attach vertices to their regions
+        self.settings.db_print("Finding cell regions and neighbors...", detail=2)
         for index, each_cell in enumerate(cells):
             each_cell.find_region(index, vor, vertices)
             each_cell.find_neighbors(index, vor, cells)
 
+        self.settings.db_print("Finding vertex neighbors...", detail=2)
         for index, each_vertex in enumerate(vertices):
             each_vertex.find_neighbors(index, vor, vertices)
 
@@ -325,6 +333,9 @@ class KhaosMap:
 
         for each_cell in self.cells:
             each_cell.update_atmosphere()
+
+        for each_vertex in self.vertices:
+            each_vertex.update_hydrology(self.settings)
 
         # Update the season ticks, reset the season tick counter if necessary
         self.settings.season_ticks_this_year += 1

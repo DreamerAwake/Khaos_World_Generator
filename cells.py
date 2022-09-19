@@ -23,6 +23,7 @@ class Cell(Renderable):
 
         # Associated Terrain data
         self.altitude = 0.0
+        self.lowest_vertex = None
         self.wind_deflection = None
         self.wind_vector = pygame.math.Vector2(0, 0)
         self.temperature = (settings.temps_equatorial + settings.temps_lowest) / 2
@@ -31,7 +32,7 @@ class Cell(Renderable):
         # Rainfall data
         self.rainfall_this_year = 0
         self.rainfall_last_year = 0
-        self.watertable = 0
+        self.watertable = 1000 * self.settings.wtr_sea_level
 
         # Set pressure based on location on the map, northern climes start with low pressure
         if abs(self.y) > 1.2 - self.settings.atmo_arctic_extent:
@@ -62,21 +63,30 @@ class Cell(Renderable):
         self.altitude /= len(self.region)
 
     def find_color(self):
-        total_temps_range = (self.settings.temps_equatorial - self.settings.temps_lowest)
-        ave_temps = (total_temps_range / 2)
-        heat_r_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps
-        heat_g_mod = ((self.temperature - self.settings.temps_lowest) - self.settings.temps_lowest) / total_temps_range
-        heat_b_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps + 0.25
 
-        colors = [(64 * self.altitude) + (159 * heat_r_mod),
-                  (128 * self.altitude) + 127 - (12 ** (heat_g_mod + 1)),
-                  (64 * self.altitude) - (159 * heat_b_mod)]
+        if self.temperature > self.settings.temps_freezing:
+            total_temps_range = (self.settings.temps_equatorial - self.settings.temps_lowest)
+            ave_temps = (total_temps_range / 2)
+            heat_r_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps
+            heat_g_mod = ((self.temperature - self.settings.temps_lowest) - self.settings.temps_lowest) / total_temps_range
+            heat_b_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps + 0.25
 
-        for index in range(0, len(colors)):
-            if colors[index] < 0:
-                colors[index] = 0
-            elif colors[index] > 255:
-                colors[index] = 255
+            rainfall_mod = self.rainfall_this_year / 1000
+            if rainfall_mod > 1:
+                rainfall_mod = 1
+
+            colors = [(86 * self.altitude) + (20 * heat_r_mod),
+                      128 + (92 * self.altitude) + (20 * rainfall_mod) - (6 ** (heat_g_mod + 1)),
+                      (100 * self.altitude) + (64 * self.humidity) + (28 * rainfall_mod) - (32 * heat_b_mod)]
+
+            for index in range(0, len(colors)):
+                if colors[index] < 0:
+                    colors[index] = 0
+                elif colors[index] > 255:
+                    colors[index] = 255
+
+        else:
+            colors = [128 + (128 * self.altitude), 128 + (128 * self.altitude), 128 + (128 * self.altitude)]
 
         self.cell_color = colors
 
@@ -103,7 +113,8 @@ class Cell(Renderable):
                 self.wind_deflection += deflector
 
     def find_region(self, index, vor, vertices):
-        """Finds the region for the cell, which are stored as the vertex objects that make up that region."""
+        """Finds the region for the cell, which are stored as a dictionary of the vertex objects
+        that make up that region : the distance to that vertex."""
         self.region.clear()
 
         for vertex_index in vor.regions[vor.point_region[index]]:
@@ -127,6 +138,18 @@ class Cell(Renderable):
             else:
                 continue
             self.neighbors[cell] = math.sqrt(abs(self.x - cell.x) + abs(self.y - cell.y))
+
+    def find_lowest_vertex(self):
+        """Finds the neighboring vertex with the lowest altitude, and stores it in self.lowest_vertex."""
+        lowest_vertex = None
+        lowest_alt_found = 2.0
+
+        for vertex in self.region:
+            if vertex.altitude < lowest_alt_found:
+                lowest_vertex = vertex
+                lowest_alt_found = vertex.altitude
+
+        self.lowest_vertex = lowest_vertex
 
     def is_equatorial(self):
         """Returns True if the cell lies on the equator, otherwise returns false."""
@@ -317,6 +340,20 @@ class Cell(Renderable):
         self.pressure_delta -= rainfall
         self.rainfall_this_year += rainfall * self.settings.wtr_rainfall_mod
 
+        # Add rainfall to the watertable above sea level
+        if self.altitude > self.settings.wtr_sea_level:
+            self.watertable += rainfall * self.settings.wtr_rainfall_mod
+
+        # Adjust the watertable relative to altitude
+        watertable_delta = self.watertable - (self.watertable * self.altitude)
+        drop_dist_mod = ((self.altitude - self.lowest_vertex.altitude)
+                         / (self.altitude + 0.0001)) * self.settings.wtr_drop_dist_mod
+
+        watertable_delta += drop_dist_mod
+
+        self.watertable -= watertable_delta
+        self.lowest_vertex.water_volume += watertable_delta
+
         # Moisture
         self.humidity += self.humidity_delta
         self.humidity_delta = 0.0
@@ -342,8 +379,13 @@ class Cell(Renderable):
         output += f"Humidity {round(self.humidity, 2)} * Pressure: {round(self.pressure, 3)} * "
         output += f"Wind Angle: {round(math.atan(self.wind_vector.x / self.wind_vector.y), 3)}, "
         output += f"Magnitude: {round(self.wind_vector.magnitude(), 2)} * * "
+
         output += f"Rainfall this year: {round(self.rainfall_this_year, 2)} * "
-        output += f"Rainfall last year: {round(self.rainfall_last_year, 2)} * "
+        output += f"Rainfall last year: {round(self.rainfall_last_year, 2)} * * "
+
+        output += f"Watertable Volume here: {round(self.watertable)} * "
+        for iteration, key in enumerate(self.region.keys()):
+            output += f"Vertex {iteration +1} water volume is: {round(key.water_volume)} * "
 
         return output
 
@@ -386,12 +428,12 @@ class Cell(Renderable):
                         rainfall_mod = 1
                     rainfall_mod *= 255
                     pygame.draw.polygon(renderer.screen, ((self.cell_color[0] + rainfall_mod / 2) / 2,
-                                                          (self.cell_color[1] + rainfall_mod / 2) / 2,
-                                                          (self.cell_color[2] + rainfall_mod) / 2), self.polygon, 0)
+                                                                  (self.cell_color[1] + rainfall_mod / 2) / 2,
+                                                                  (self.cell_color[2] + rainfall_mod) / 2), self.polygon, 0)
                 else:
                     pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
             else:
-                pygame.draw.polygon(renderer.screen, (64, 64, 128), self.polygon, 0)
+                pygame.draw.polygon(renderer.screen, renderer.settings.clr['ocean'], self.polygon, 0)
 
         # Render the wind vector if we are in the AtmosphereQ
         elif renderer.label == 'atmosphere':
@@ -405,8 +447,8 @@ class Cell(Renderable):
                 temp_as_percent = 0.0
 
             pygame.draw.line(renderer.screen, (200 * temp_as_percent,
-                                               128 - abs(128 - 14 ** (1 + temp_as_percent)),
-                                               255 - 200 * temp_as_percent),
+                                                       128 - abs(128 - 14 ** (1 + temp_as_percent)),
+                                                       255 - 200 * temp_as_percent),
                              (self.ss_x, self.ss_y),
                              (self.ss_x + self.wind_vector.x * (self.settings.screen_size[0] / 35),
                               self.ss_y + self.wind_vector.y * (self.settings.screen_size[1] / 35)), 1)
@@ -434,7 +476,14 @@ class Vertex(Renderable):
 
         # Associated Terrain data
         self.altitude = 0.0
+        self.lowest_neighbor = None
         self.is_peak = False
+
+        # Hydrology data
+        self.water_volume = 0
+        self.water_flow_ticks = []
+        self.water_flow_rate = 0
+        self.is_lake = False
 
         # Rendering data
         self.color = (0, 0, 0)
@@ -468,14 +517,108 @@ class Vertex(Renderable):
             distance = get_distance(self, vertex)
             self.neighbors[vertex] = distance
 
+    def find_lowest_neighbor(self):
+        """Finds the neighboring vertex with the lowest altitude among neighbors and self, and stores it in
+        self.lowest_neighbor. Sets lowest_neighbor to None, if this vertex is the lower than all neighbors.
+        Returns the lowest of the neighbors regardless of whether or not it is lower than the self."""
+        lowest_neighbor = None
+        lowest_alt_found = 2.0
+
+        for neighbor in self.neighbors.keys():
+            if neighbor.altitude < lowest_alt_found:
+                lowest_neighbor = neighbor
+                lowest_alt_found = neighbor.altitude
+
+        if lowest_neighbor.altitude > self.altitude:
+            self.lowest_neighbor = None
+        else:
+            self.lowest_neighbor = lowest_neighbor
+
+        return lowest_neighbor
+
+    def update_hydrology(self, settings):
+        """Updates this vertex's hydrology."""
+        tot_water_volume_delta = 0
+
+        # If a generator has a lower watertable than this has water volume, add some of the volume to the generator
+        for cell in self.generators.keys():
+            if cell.watertable < self.water_volume and self.water_volume > cell.altitude * 1000:
+                water_volume_delta = (self.water_volume - cell.watertable) * settings.wtr_reabsorption
+                cell.watertable += water_volume_delta
+                tot_water_volume_delta += water_volume_delta
+                self.water_volume -= water_volume_delta
+
+        # Check if there is a lower neighbor than self
+        if self.lowest_neighbor:
+            self.is_lake = False
+            # Dump all water if you've encountered a sea cell
+            for cell in self.generators.keys():
+                if cell.altitude < settings.wtr_sea_level:
+                    tot_water_volume_delta += self.water_volume
+                    self.water_volume = 0
+
+        # TODO Refactor this
+        # Water flows toward the lowest point
+            flow_delta = self.water_volume - self.lowest_neighbor.water_volume
+            if flow_delta > 0.0:
+                tot_water_volume_delta += flow_delta
+                self.water_volume -= flow_delta
+                self.lowest_neighbor.water_volume += flow_delta
+
+        # Else, if water is above altitude become a basin lake
+        elif self.water_volume > self.altitude * 1000 and self.altitude > settings.wtr_sea_level:
+            self.is_lake = True
+            next_lowest_n = self.find_lowest_neighbor()
+            # If the water level rises above that of the lowest adjacent neighbor, dump into it
+            if next_lowest_n.water_volume + (next_lowest_n.altitude * 1000) < \
+                    self.water_volume + (self.altitude * 1000):
+                water_volume_delta = (self.water_volume + (self.altitude * 1000)) - \
+                                     (next_lowest_n.water_volume + (next_lowest_n.altitude * 1000))
+                next_lowest_n.water_volume += water_volume_delta
+                self.water_volume -= water_volume_delta
+                tot_water_volume_delta += water_volume_delta
+
+        # If above sea level
+        if self.altitude > settings.wtr_sea_level:
+            # Set flowrate variables
+            self.water_flow_ticks.append(tot_water_volume_delta)
+            if len(self.water_flow_ticks) > settings.wtr_flow_ticks_to_ave:
+                self.water_flow_ticks.pop(0)
+            self.water_flow_rate = round(sum(self.water_flow_ticks)/(len(self.water_flow_ticks) + 0.0001))
+
+        # Below sea level
+        else:
+            self.is_lake = False
+            self.water_volume = settings.wtr_sea_level * 1000
+            if self.water_flow_ticks:
+                self.water_flow_ticks.clear()
+                self.water_flow_rate = 0
+
     def update(self, renderer):
         """Update call for the Vertex."""
+        # Initialize the Vertex if it has never run before
         if self.ss_x is None:
             self.ss_x, self.ss_y = renderer.settings.project_to_screen(self.x, self.y)
             self.color = (255 * self.altitude, 255 * self.altitude, 255 * self.altitude)
 
-        if self.altitude > renderer.settings.wtr_sea_level:
+        if self.altitude > renderer.settings.wtr_sea_level and renderer.settings.do_render_altitudes:
             pygame.draw.circle(renderer.screen, self.color, (self.ss_x, self.ss_y), 3)
+
+        # Render rivers
+        if self.lowest_neighbor and renderer.settings.do_render_rivers:
+            if self.is_lake:
+                pygame.draw.circle(renderer.screen, renderer.settings.clr['river'],
+                                   (self.ss_x, self.ss_y), round(self.water_volume/1000))
+            elif self.lowest_neighbor.ss_x:
+                if self.water_flow_rate > renderer.settings.wtr_min_flow_to_render:
+                    river_width = 1 + round(self.water_flow_rate/renderer.settings.wtr_river_flow_as_width)
+                else:
+                    river_width = 0
+                if river_width > renderer.settings.wtr_max_river_render_width:
+                    river_width = renderer.settings.wtr_max_river_render_width
+                pygame.draw.line(renderer.screen, renderer.settings.clr['river'],
+                                 (self.ss_x, self.ss_y), (self.lowest_neighbor.ss_x, self.lowest_neighbor.ss_y),
+                                 river_width)
 
 
 class Path:

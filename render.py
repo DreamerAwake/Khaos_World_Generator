@@ -1,5 +1,5 @@
 import pygame.draw
-
+from scipy import ndimage
 
 class RenderQ:
     """This class contains and manages a list of Renderable objects, including their calls to .update(),
@@ -11,19 +11,39 @@ class RenderQ:
         self.label = label
         self.queue = []
         self.disable = False
+        self.AA = False
+        self.aa_screen = None
 
-    def update(self):
+    def update(self, blit_to=None):
         """Calls update on each element in the queue as long as this Q is enabled."""
         if not self.disable:
             for each_renderable in self.queue:
-                each_renderable.update(self)
+                if type(each_renderable).__bases__[0] == Renderable:
+                    each_renderable.update(self)
+                else:
+                    each_renderable.update()
 
-    def add(self, renderable, place_on_bottom=False):
+            if blit_to:
+                blit_to.blit(self.screen, (0, 0))
+
+        # Apply AA
+        if self.AA:
+            aa = pygame.transform.smoothscale(self.screen, self.settings.window_size)
+            self.aa_screen.blit(aa, (0, 0))
+
+    def enable_AA(self, aa_screen):
+        """Enable antialiasing for this renderQ. The given screen becomes the final rendering target.."""
+        self.AA = True
+        self.aa_screen = aa_screen
+
+    def add(self, renderable, place_on_bottom=False, place_at=0):
         """Adds a renderable object to the RenderQ"""
         renderable: Renderable
         if renderable not in self.queue:
             if place_on_bottom:
                 self.queue.insert(0, renderable)
+            elif place_at != 0:
+                self.queue.insert(place_at, renderable)
             else:
                 self.queue.append(renderable)
 

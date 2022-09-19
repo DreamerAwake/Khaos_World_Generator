@@ -12,30 +12,47 @@ class Settings:
         self.map = None
 
         # Set the random seed
-        self.seed = 65
+        self.seed = 91
         numpy.random.seed(self.seed)
         random.seed(self.seed)
 
         # Program settings
         self.debug_console = True
-        self.debug_detail = 0       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
+        self.debug_detail = 2       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
 
         # Pygame settings
+        self.enableAA = True
         self.window_size = (1800, 1000)
         self.text_box_width = 400
-        self.screen_size = (self.window_size[0] - self.text_box_width, self.window_size[1])
+        if self.enableAA:
+            self.render_size = (self.window_size[0] * 2, self.window_size[1] * 2)
+            self.text_box_width *= 2
+        else:
+            self.render_size = (self.window_size[0], self.window_size[1])
+        self.screen_size = (self.render_size[0] - self.text_box_width, self.render_size[1])
         self.framerate = 60
-        self.do_render_vertices = False
+        self.do_render_altitudes = False
+        self.do_render_rivers = True
         self.do_render_atmosphere = False
         self.do_render_rainfall = False
 
+        # Color settings
+        self.clr = {'black': (8, 8, 8),
+                    'ocean': (128, 128, 224),
+                    'river': (64, 64, 128)}
+
         # Text settings
         pygame.font.init()
-        self.font_size = 24
-        self.font_body = pygame.font.Font('fonts/reemkufi.ttf', self.font_size)
+        self.font_head_size = 30
+        self.font_body_size = 18
+        if self.enableAA:
+            self.font_head_size *= 2
+            self.font_body_size *= 2
+        self.font_head = pygame.font.Font('fonts/sylfaen.ttf', self.font_head_size)
+        self.font_body = pygame.font.Font('fonts/reemkufi.ttf', self.font_body_size)
 
         # Voronoi generation settings
-        self.total_cells = 3000
+        self.total_cells = 500
         self.relax_passes = 5
 
         # Terrain generation settings
@@ -43,7 +60,7 @@ class Settings:
         self.tect_plates_max = 40    # The maximum number of tectonic plates
         self.tect_min_dist = 0.015       # The minimum distance between two plate centers
         self.tect_attempt_to_place = 30     # Number of times the generator will try to place a single tectonic plate
-        self.tect_smoothing_resolution = 4  # Depth of samples when smoothing by average altitude
+        self.tect_smoothing_resolution = 3  # Depth of samples when smoothing by average altitude
         self.tect_smoothing_repetitions = 2  # Number of times to perform altitude smoothing
         self.tect_final_alt_mod = 0.5       # Determines the middlepoint of each plate's altitude gradient
 
@@ -68,16 +85,16 @@ class Settings:
         self.wind_presim = 0        # Number of wind ticks to presimulate in worldgen
 
         self.temps_equatorial = 95.0    # The target temperature for the equator (in F, because I am a dumb American)
-        self.temps_freezing = 28.0   # A number used by the atmosphere renderer to determine the cold gradient
+        self.temps_freezing = 32.0   # A number used by the atmosphere renderer to determine the cold gradient
         self.temps_lowest = -35.0       # The lowest allowed temperature
         self.temps_highest = 130           # The temperature cap
         self.temps_equatorial_rise = 10.0  # The rise in temperature added at the equator to radiate heat to the map
-        self.temps_arctic_cooling = 9.0  # The amount of temp lost in the arctic regions per tick
-        self.temps_natural_cooling = 0.2    # Amount of heat lost each tick
-        self.temps_alt_cooling_threshold = 0.75  # The minimum altitude to experience elevation cooling effects
-        self.temps_alt_cooling = 2.0    # The amount of cooling applied to an altitude of 1.0
+        self.temps_arctic_cooling = 7.0  # The amount of temp lost in the arctic regions per tick
+        self.temps_natural_cooling = 0.3    # Amount of heat lost each tick
+        self.temps_alt_cooling_threshold = 0.8  # The minimum altitude to experience elevation cooling effects
+        self.temps_alt_cooling = 4.5    # The amount of cooling applied to an altitude of 1.0
         self.temps_critical_angle = 3.14  # The maximum angle (in radians) that allows a tile's wind to transfer heat
-        self.temps_heat_bias = 1.2  # This is applied as a multiplier to heat propagation, inverse is applied to cold
+        self.temps_heat_bias = 1.4  # This is applied as a multiplier to heat propagation, inverse is applied to cold
 
         self.baro_transfer_rate = 0.3   # A multiplier on the value of pressure transfer between cells
         self.baro_wind_effect = 0.2  # The strength of pressure systems' ability to dampen wind interaction
@@ -91,6 +108,16 @@ class Settings:
         self.wtr_rainfall_mod = 1.0  # A multiplier on per-tick rainfall, only affects precipitation, not humidity
         self.wtr_baro_evap_rate = 0.001  # The size of a parcel of sea water evaporation pressure
         self.wtr_humid_evap_rate = 0.02   # The size of a parcel of sea water evaporation humidity
+        self.wtr_drop_dist_mod = 1.0    # The multiplier of how much a drop in elevation causes draw from the watertable
+        self.wtr_reabsorption = 0.7     # A multiplier on the rate that running water reabsorbs into the soil
+        self.wtr_flow_ticks_to_ave = 10  # Number of previous ticks of waterflow averaged to produce a flowrate
+        self.wtr_min_flow_to_render = 0   # Minimum flow rate for rendering to occur on a river
+        self.wtr_river_flow_as_width = 650  # River flow is divided by this number to produce the render width
+        self.wtr_max_river_render_width = 4  # The maximum width of a river when rendered
+
+        if self.enableAA:
+            self.wtr_river_flow_as_width /= 2
+            self.wtr_max_river_render_width *= 2
 
     def db_print(self, string, detail=0):
         """A debugging function that allows selective printing of debug console text based on a

@@ -14,7 +14,8 @@ class PyGameWindow:
 
         # Initialize Pygame
         pygame.init()
-        self.screen = pygame.display.set_mode(self.settings.window_size)
+        self.display_screen = pygame.display.set_mode(self.settings.window_size)
+        self.draw_screen = pygame.Surface(self.settings.render_size)
         pygame.display.set_caption("Khaos Map Generator")
 
         # Create controls and clock
@@ -22,9 +23,12 @@ class PyGameWindow:
         self.clock = pygame.time.Clock()
 
         # Create the RenderQs
-        self.cellQ = render.RenderQ(self.screen, self.settings, 'cell')
-        self.atmosphereQ = render.RenderQ(self.screen, self.settings, 'atmosphere')
-        self.vertexQ = render.RenderQ(self.screen, self.settings, 'vertex')
+        self.cellQ = render.RenderQ(self.draw_screen, self.settings, 'cell')
+
+        self.atmosphereQ = render.RenderQ(self.draw_screen, self.settings, 'atmosphere')
+        self.atmosphereQ.disable = not self.settings.do_render_atmosphere
+
+        self.vertexQ = render.RenderQ(self.draw_screen, self.settings, 'vertex')
 
         # Add the elements from the map to the RenderQs
         for each_cell in self.map.cells:
@@ -37,6 +41,16 @@ class PyGameWindow:
         # Create the gui, including the GUI RenderQ
         self.guiQ, self.controls.buttons = self.build_gui()
 
+        # Create the master RenderQ
+        self.masterQ = render.RenderQ(self.draw_screen, self.settings, 'master')
+        self.masterQ.add(self.cellQ)
+        self.masterQ.add(self.vertexQ)
+        self.masterQ.add(self.atmosphereQ)
+        self.masterQ.add(self.guiQ)
+
+        if self.settings.enableAA:
+            self.masterQ.enable_AA(self.display_screen)
+
     def main_loop(self):
         """Main loop that calls all the update functions for the subsidiary objects"""
         while not self.controls.ctrl_bools['exit']:
@@ -46,17 +60,6 @@ class PyGameWindow:
             self.controls.update_mouse(self.map, self.guiQ)
             self.clock.tick(self.settings.framerate)
 
-            # Update bools set by buttons
-            if khaos_map.settings.do_render_vertices:
-                window.vertexQ.disable = False
-            else:
-                window.vertexQ.disable = True
-
-            if khaos_map.settings.do_render_atmosphere:
-                window.atmosphereQ.disable = False
-            else:
-                window.atmosphereQ.disable = True
-
             # Update wind
             for iteration in range(0, self.settings.atmo_iterations_per_frame):
                 self.map.update_atmosphere()
@@ -65,17 +68,17 @@ class PyGameWindow:
             self.map.update_textbox()
 
             # Update the renderQs
-            self.cellQ.update()
-            self.vertexQ.update()
-            self.atmosphereQ.update()
-            self.guiQ.update()
+            if self.settings.enableAA:
+                self.masterQ.update()
+            else:
+                self.masterQ.update(blit_to=self.display_screen)
 
             # Flip the screen
             pygame.display.flip()
 
     def build_gui(self):
         """Creates all the gui objects and puts them in a shared RenderQ."""
-        guiQ = render.RenderQ(self.screen, self.settings, 'gui')
+        guiQ = render.RenderQ(self.draw_screen, self.settings, 'gui')
         buttons = {}
 
         # Create the text box on the side of the screen
@@ -105,6 +108,7 @@ class PyGameWindow:
 
         # Add the season readout
         season_textbox = TextBox(self.settings)
+        season_textbox.font = self.settings.font_head
         season_textbox.place_text_box((0, 0), 1, 200)
         season_textbox.enable_bg((200, 200, 162))
         season_textbox.write('Season')
@@ -167,23 +171,26 @@ class KeyStrokes:
     def update_mouse(self, k_map, guiQ):
         # Change the map's focus cell based on the .last_click in controls
         if self.last_click is not None:
-
+            if self.settings.enableAA:
+                self.last_click = (self.last_click[0]*2, self.last_click[1]*2)
             # If the click is on the gui, find if the click was on a button
             if self.last_click[0] > k_map.settings.screen_size[0]:
                 for button in self.buttons.keys():
                     if button.is_point_in(self.last_click):
                         # Determine which button was clicked
                         if self.buttons[button] == 'atmo_tb':
-                            khaos_map.settings.do_render_atmosphere = not khaos_map.settings.do_render_atmosphere
+                            k_map.settings.do_render_atmosphere = not k_map.settings.do_render_atmosphere
                             # Set the new button color
-                            if khaos_map.settings.do_render_atmosphere:
+                            if k_map.settings.do_render_atmosphere:
+                                window.atmosphereQ.disable = False
                                 button.color = (200, 255, 200)
                             else:
+                                window.atmosphereQ.disable = True
                                 button.color = (255, 200, 200)
                         elif self.buttons[button] == 'vertex_tb':
-                            khaos_map.settings.do_render_vertices = not khaos_map.settings.do_render_vertices
+                            k_map.settings.do_render_altitudes = not k_map.settings.do_render_altitudes
                             # Set the new button color
-                            if khaos_map.settings.do_render_vertices:
+                            if k_map.settings.do_render_altitudes:
                                 button.color = (200, 255, 200)
                             else:
                                 button.color = (255, 200, 200)
