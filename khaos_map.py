@@ -13,6 +13,8 @@ class KhaosMap:
         self.settings.map = self
         self.display_text = None
         self.season_text = None
+        self.has_biomes = False
+        self.current_season = ''
 
         dbprint = self.settings.db_print  # alias
 
@@ -60,8 +62,6 @@ class KhaosMap:
         dbprint("Getting windy...", detail=3)
         for iteration in range(0, self.settings.wind_presim):
             self.update_atmosphere()
-
-        # TODO Erosion, rivers
 
     def gen_vor(self):
         """Generates a voronoi diagram and passes it through several relax iterations as decided in the settings."""
@@ -265,6 +265,29 @@ class KhaosMap:
         else:
             return 'winter'
 
+    def end_season(self):
+        """Ends the season by taking the cumulative average flowrate for all vertices and applying them to the erosion
+        functions of that vertex. Then adjusts cells relative to their vertices."""
+
+        if self.settings.erode_enable:
+            for each_vertex in self.vertices:
+                each_vertex.erode(self.settings)
+
+            for each_vertex in self.vertices:
+                each_vertex.find_lowest_neighbor()
+
+            for each_cell in self.cells:
+                each_cell.find_altitude()
+                each_cell.find_lowest_vertex()
+                each_cell.record_season(self.current_season)
+                each_cell.find_color()
+
+        # If erode is not enabled we still need season data
+        else:
+            for each_cell in self.cells:
+                each_cell.record_season(self.current_season)
+                each_cell.find_color()
+
     def end_year(self):
         """Ends the year by resetting all rainfall trackers in cells and setting a few flags."""
         self.settings.season_ticks_this_year = 0
@@ -342,12 +365,17 @@ class KhaosMap:
         if self.settings.season_ticks_this_year > self.settings.season_ticks_per_year:
             self.end_year()
 
+        # Update the season
+        if self.current_season != self.get_season():
+            self.end_season()
+            self.current_season = self.get_season()
+
     def update_textbox(self):
         """Updates the textbox to reflect the current focus cell of the map."""
         if self.focus_cell is not None:
             self.display_text.write(self.focus_cell.write())
 
-        self.season_text.write(self.get_season().title())
+        self.season_text.write(self.current_season.title())
 
 
 def lloyds_relax(vor):

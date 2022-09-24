@@ -3,6 +3,7 @@ import math
 import pygame.draw
 
 from render import *
+from biomes import *
 
 
 class Cell(Renderable):
@@ -28,6 +29,13 @@ class Cell(Renderable):
         self.wind_vector = pygame.math.Vector2(0, 0)
         self.temperature = (settings.temps_equatorial + settings.temps_lowest) / 2
         self.humidity = 0.0
+
+        # Biome data
+        self.biome = None
+        self.last_spring = None
+        self.last_summer = None
+        self.last_autumn = None
+        self.last_winter = None
 
         # Rainfall data
         self.rainfall_this_year = 0
@@ -62,31 +70,39 @@ class Cell(Renderable):
 
         self.altitude /= len(self.region)
 
+    def find_biome(self):
+        """Creates a biome for the cell"""
+        self.biome = Biome(self)
+
     def find_color(self):
+        if self.biome is None:
+            if self.temperature > self.settings.temps_freezing:
+                total_temps_range = (self.settings.temps_equatorial - self.settings.temps_lowest)
+                ave_temps = (total_temps_range / 2)
+                heat_r_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps
+                heat_g_mod = ((self.temperature - self.settings.temps_lowest) - self.settings.temps_lowest) / total_temps_range
+                heat_b_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps + 0.25
 
-        if self.temperature > self.settings.temps_freezing:
-            total_temps_range = (self.settings.temps_equatorial - self.settings.temps_lowest)
-            ave_temps = (total_temps_range / 2)
-            heat_r_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps
-            heat_g_mod = ((self.temperature - self.settings.temps_lowest) - self.settings.temps_lowest) / total_temps_range
-            heat_b_mod = ((self.temperature - self.settings.temps_lowest) - ave_temps) / ave_temps + 0.25
+                rainfall_mod = self.rainfall_this_year / 1000
+                if rainfall_mod > 1:
+                    rainfall_mod = 1
 
-            rainfall_mod = self.rainfall_this_year / 1000
-            if rainfall_mod > 1:
-                rainfall_mod = 1
+                colors = [(86 * self.altitude) + (20 * heat_r_mod),
+                          128 + (92 * self.altitude) + (20 * rainfall_mod) - (6 ** (heat_g_mod + 1)),
+                          (100 * self.altitude) + (64 * self.humidity) + (28 * rainfall_mod) - (32 * heat_b_mod)]
 
-            colors = [(86 * self.altitude) + (20 * heat_r_mod),
-                      128 + (92 * self.altitude) + (20 * rainfall_mod) - (6 ** (heat_g_mod + 1)),
-                      (100 * self.altitude) + (64 * self.humidity) + (28 * rainfall_mod) - (32 * heat_b_mod)]
+                for index in range(0, len(colors)):
+                    if colors[index] < 0:
+                        colors[index] = 0
+                    elif colors[index] > 255:
+                        colors[index] = 255
 
-            for index in range(0, len(colors)):
-                if colors[index] < 0:
-                    colors[index] = 0
-                elif colors[index] > 255:
-                    colors[index] = 255
+            else:
+                colors = [128 + (128 * self.altitude), 128 + (128 * self.altitude), 128 + (128 * self.altitude)]
 
+        # If a biome already exists to set colors
         else:
-            colors = [128 + (128 * self.altitude), 128 + (128 * self.altitude), 128 + (128 * self.altitude)]
+            colors = self.biome.get_color()
 
         self.cell_color = colors
 
@@ -150,6 +166,17 @@ class Cell(Renderable):
                 lowest_alt_found = vertex.altitude
 
         self.lowest_vertex = lowest_vertex
+
+    def find_watertable_drop(self):
+        """Finds the drop in the cell's watertable relative to its altitude.
+        The overflow goes into its lowest vertex."""
+        watertable_delta = self.watertable - (self.watertable * self.altitude)
+        drop_dist_mod = ((self.altitude - self.lowest_vertex.altitude)
+                         / (self.altitude + 0.0001)) * self.settings.wtr_drop_dist_mod
+
+        watertable_delta *= drop_dist_mod
+
+        return watertable_delta
 
     def is_equatorial(self):
         """Returns True if the cell lies on the equator, otherwise returns false."""
@@ -300,6 +327,18 @@ class Cell(Renderable):
             self.pressure_delta += stg.wtr_baro_evap_rate * temps_multiplier
             self.humidity_delta += stg.wtr_humid_evap_rate * temps_multiplier
 
+    def record_season(self, current_season):
+        """Take record of current weather data in a SeasonData object.
+        Assign it to the proper self.last_season variable."""
+        if current_season == 'spring':
+            self.last_spring = SeasonData(current_season, self, self.last_winter)
+        elif current_season == 'summer':
+            self.last_summer = SeasonData(current_season, self, self.last_spring)
+        elif current_season == 'autumn':
+            self.last_autumn = SeasonData(current_season, self, self.last_summer)
+        elif current_season == 'winter':
+            self.last_winter = SeasonData(current_season, self, self.last_autumn)
+
     def update_atmosphere(self):
         """Using the previously calculated data, update the atmosphere to reflect those changes."""
 
@@ -345,12 +384,7 @@ class Cell(Renderable):
             self.watertable += rainfall * self.settings.wtr_rainfall_mod
 
         # Adjust the watertable relative to altitude
-        watertable_delta = self.watertable - (self.watertable * self.altitude)
-        drop_dist_mod = ((self.altitude - self.lowest_vertex.altitude)
-                         / (self.altitude + 0.0001)) * self.settings.wtr_drop_dist_mod
-
-        watertable_delta += drop_dist_mod
-
+        watertable_delta = self.find_watertable_drop()
         self.watertable -= watertable_delta
         self.lowest_vertex.water_volume += watertable_delta
 
@@ -383,9 +417,14 @@ class Cell(Renderable):
         output += f"Rainfall this year: {round(self.rainfall_this_year, 2)} * "
         output += f"Rainfall last year: {round(self.rainfall_last_year, 2)} * * "
 
-        output += f"Watertable Volume here: {round(self.watertable)} * "
-        for iteration, key in enumerate(self.region.keys()):
-            output += f"Vertex {iteration +1} water volume is: {round(key.water_volume)} * "
+        if self.biome is None:
+            output += f"Biome: None Assigned"
+
+        else:
+            output += f"Biome: {self.biome.biome_title.title()} * "
+            output += "Biome Tags: "
+            for each_tag in self.biome.biome_tags:
+                output += f" {each_tag.title()},"
 
         return output
 
@@ -405,35 +444,28 @@ class Cell(Renderable):
             # Calculate the color
             self.find_color()
 
-        # Refind color at the beginning of each season
-        if self.settings.season_ticks_this_year == 0:
-            self.find_color()
-        elif self.settings.season_ticks_this_year == round(self.settings.season_ticks_per_year * 0.25):
-            self.find_color()
-        elif self.settings.season_ticks_this_year == round(self.settings.season_ticks_per_year * 0.5):
-            self.find_color()
-        elif self.settings.season_ticks_this_year == round(self.settings.season_ticks_per_year * 0.75):
-            self.find_color()
-
         # Now we can render the shape if we are in the CellQ
         if renderer.label == 'cell':
-            if self.altitude > self.settings.wtr_sea_level:
-                # If render rainfall is on, mix the colors with the rainfall colors
-                if self.settings.do_render_rainfall:
-                    if self.rainfall_last_year == 0:
-                        rainfall_mod = self.rainfall_this_year / 1000
-                    else:
-                        rainfall_mod = self.rainfall_last_year / 1000
-                    if rainfall_mod > 1:
-                        rainfall_mod = 1
-                    rainfall_mod *= 255
-                    pygame.draw.polygon(renderer.screen, ((self.cell_color[0] + rainfall_mod / 2) / 2,
-                                                                  (self.cell_color[1] + rainfall_mod / 2) / 2,
-                                                                  (self.cell_color[2] + rainfall_mod) / 2), self.polygon, 0)
-                else:
-                    pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
+            if self.biome:
+                pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
             else:
-                pygame.draw.polygon(renderer.screen, renderer.settings.clr['ocean'], self.polygon, 0)
+                if self.altitude > self.settings.wtr_sea_level:
+                    # If render rainfall is on, mix the colors with the rainfall colors
+                    if self.settings.do_render_rainfall:
+                        if self.rainfall_last_year == 0:
+                            rainfall_mod = self.rainfall_this_year / 1000
+                        else:
+                            rainfall_mod = self.rainfall_last_year / 1000
+                        if rainfall_mod > 1:
+                            rainfall_mod = 1
+                        rainfall_mod *= 255
+                        pygame.draw.polygon(renderer.screen, ((self.cell_color[0] + rainfall_mod / 2) / 2,
+                                                                      (self.cell_color[1] + rainfall_mod / 2) / 2,
+                                                                      (self.cell_color[2] + rainfall_mod) / 2), self.polygon, 0)
+                    else:
+                        pygame.draw.polygon(renderer.screen, self.cell_color, self.polygon, 0)
+                else:
+                    pygame.draw.polygon(renderer.screen, renderer.settings.clr['ocean'], self.polygon, 0)
 
         # Render the wind vector if we are in the AtmosphereQ
         elif renderer.label == 'atmosphere':
@@ -482,6 +514,8 @@ class Vertex(Renderable):
         # Hydrology data
         self.water_volume = 0
         self.water_flow_ticks = []
+        self.water_flow_ticks_since_save = 0
+        self.water_flow_this_season = []
         self.water_flow_rate = 0
         self.is_lake = False
 
@@ -502,6 +536,19 @@ class Vertex(Renderable):
                 total_altitude += each_neighbor.get_average_altitude(resolution - 1)
             total_altitude /= len(self.neighbors)
             return total_altitude
+
+    def erode(self, settings):
+        """Uses the local flowrate to calculate an erosion factor for this cell."""
+        erosion_factor = (sum(self.water_flow_this_season) + self.water_flow_rate) \
+                         / (len(self.water_flow_this_season) + 1)
+        erosion_factor *= settings.erode_mod
+
+        # Account for flowrate having a different order of magnitude than altitude
+        erosion_factor /= 1000
+
+        self.altitude -= erosion_factor
+        if self.altitude <= 0.0:
+            self.altitude = 0.0
 
     def find_neighbors(self, index, vor, vertices):
         """Finds the neighboring vertices by looking them up in the voronoi diagram, then builds a dictionary where
@@ -557,7 +604,6 @@ class Vertex(Renderable):
                     tot_water_volume_delta += self.water_volume
                     self.water_volume = 0
 
-        # TODO Refactor this
         # Water flows toward the lowest point
             flow_delta = self.water_volume - self.lowest_neighbor.water_volume
             if flow_delta > 0.0:
@@ -584,7 +630,15 @@ class Vertex(Renderable):
             self.water_flow_ticks.append(tot_water_volume_delta)
             if len(self.water_flow_ticks) > settings.wtr_flow_ticks_to_ave:
                 self.water_flow_ticks.pop(0)
-            self.water_flow_rate = round(sum(self.water_flow_ticks)/(len(self.water_flow_ticks) + 0.0001))
+            if sum(self.water_flow_ticks) > 0 and len(self.water_flow_ticks) > 0:
+                self.water_flow_rate = round(sum(self.water_flow_ticks)/(len(self.water_flow_ticks)))
+            else:
+                self.water_flow_rate = 0
+            # Retain old flowrate info
+            self.water_flow_ticks_since_save += 1
+            if self.water_flow_ticks_since_save > settings.wtr_flow_ticks_to_ave:
+                self.water_flow_ticks_since_save = 0
+                self.water_flow_this_season.append(self.water_flow_rate)
 
         # Below sea level
         else:
@@ -619,6 +673,41 @@ class Vertex(Renderable):
                 pygame.draw.line(renderer.screen, renderer.settings.clr['river'],
                                  (self.ss_x, self.ss_y), (self.lowest_neighbor.ss_x, self.lowest_neighbor.ss_y),
                                  river_width)
+
+
+class SeasonData:
+    """A data type for seasonal weather readings from a cell, used to set biomes."""
+    def __init__(self, current_season_title, parent_cell, last_season):
+        self.season_title = current_season_title
+        self.altitude = parent_cell.altitude
+        self.wind_magnitude = parent_cell.wind_vector.magnitude()
+        self.temperature = parent_cell.temperature
+        self.humidity = parent_cell.humidity
+        self.pressure = parent_cell.pressure
+        self.watertable = parent_cell.watertable
+        self.rainfall_this_year = parent_cell.rainfall_this_year
+
+        # Rainfall data
+        if last_season and self.season_title != 'spring':
+            self.rainfall_this_season = parent_cell.rainfall_this_year - last_season.rainfall_this_year
+        # If there is no seasonal data going back to the beginning of the year, fudge an average
+        elif last_season is None and self.season_title != 'spring':
+            if self.season_title == 'summer':
+                self.rainfall_this_season = parent_cell.rainfall_this_year * 0.5
+            elif self.season_title == 'autumn':
+                self.rainfall_this_season = parent_cell.rainfall_this_year * 0.333
+            else:
+                self.rainfall_this_season = parent_cell.rainfall_this_year * 0.25
+        else:
+            self.rainfall_this_season = parent_cell.rainfall_this_year
+
+        # Riverflow data
+        self.average_flow = 0
+        for each_vertex in parent_cell.region.keys():
+            self.average_flow += each_vertex.water_flow_rate
+        self.average_flow /= len(parent_cell.region)
+
+
 
 
 class Path:

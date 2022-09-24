@@ -60,6 +60,14 @@ class PyGameWindow:
             self.controls.update_mouse(self.map, self.guiQ)
             self.clock.tick(self.settings.framerate)
 
+            # If the biome control is on, then we need to gen biomes
+            if self.controls.ctrl_bools['biomes'] and not self.settings.erode_enable:
+                if self.map.cells[0].last_spring and self.map.cells[0].last_summer and self.map.cells[0].last_autumn and self.map.cells[0].last_winter:
+                    self.map.has_biomes = True
+                    for each_cell in self.map.cells:
+                        each_cell.find_biome()
+                        each_cell.find_color()
+
             # Update wind
             for iteration in range(0, self.settings.atmo_iterations_per_frame):
                 self.map.update_atmosphere()
@@ -138,11 +146,13 @@ class KeyStrokes:
 
         self.controls = {'exit': [pygame.K_ESCAPE],
                          'confirm': [pygame.K_SPACE, pygame.K_RETURN],
-                         }
+                         'erosion': [pygame.K_e],
+                         'biomes': [pygame.K_b]}
 
         self.ctrl_bools = {'exit': False,
                            'confirm': False,
-                           }
+                           'erosion': False,
+                           'biomes': False}
 
         self.last_click = None
         self.buttons = None
@@ -158,15 +168,28 @@ class KeyStrokes:
                     self.ctrl_bools['exit'] = True
                 elif event.key in self.controls['confirm']:
                     self.ctrl_bools['confirm'] = True
+                elif event.key in self.controls['erosion']:
+                    self.ctrl_bools['erosion'] = True
+                elif event.key in self.controls['biomes']:
+                    self.ctrl_bools['biomes'] = True
 
             elif event.type == pygame.KEYUP:
                 if event.key in self.controls['exit']:
                     self.ctrl_bools['exit'] = False
                 elif event.key in self.controls['confirm']:
                     self.ctrl_bools['confirm'] = False
+                elif event.key in self.controls['erosion']:
+                    self.ctrl_bools['erosion'] = False
+                    self.toggle_erosion()
+                elif event.key in self.controls['biomes']:
+                    self.ctrl_bools['biomes'] = False
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 self.last_click = event.pos
+
+    def toggle_erosion(self):
+        """Called when the erosion key is pressed, toggles erosion on and off."""
+        self.settings.erode_enable = not self.settings.erode_enable
 
     def update_mouse(self, k_map, guiQ):
         # Change the map's focus cell based on the .last_click in controls
