@@ -510,6 +510,7 @@ class Vertex(Renderable):
         self.altitude = 0.0
         self.lowest_neighbor = None
         self.is_peak = False
+        self.is_coastal = False
 
         # Hydrology data
         self.water_volume = 0
@@ -517,7 +518,6 @@ class Vertex(Renderable):
         self.water_flow_ticks_since_save = 0
         self.water_flow_this_season = []
         self.water_flow_rate = 0
-        self.is_lake = False
 
         # Rendering data
         self.color = (0, 0, 0)
@@ -536,6 +536,24 @@ class Vertex(Renderable):
                 total_altitude += each_neighbor.get_average_altitude(resolution - 1)
             total_altitude /= len(self.neighbors)
             return total_altitude
+
+    def get_is_coastal(self):
+        """Determines if at least one parent cell is above sea level and at least one other parent cell is below sea
+        level, used to render coastlines. """
+        is_above = False
+        is_below = False
+
+        for parent_cell in self.generators.keys():
+            if parent_cell.altitude > parent_cell.settings.wtr_sea_level:
+                is_above = True
+            if parent_cell.altitude < parent_cell.settings.wtr_sea_level:
+                is_below = True
+            if is_above and is_below:
+                self.is_coastal = True
+                return True
+
+        self.is_coastal = False
+        return False
 
     def erode(self, settings):
         """Uses the local flowrate to calculate an erosion factor for this cell."""
@@ -597,7 +615,6 @@ class Vertex(Renderable):
 
         # Check if there is a lower neighbor than self
         if self.lowest_neighbor:
-            self.is_lake = False
             # Dump all water if you've encountered a sea cell
             for cell in self.generators.keys():
                 if cell.altitude < settings.wtr_sea_level:
@@ -613,7 +630,6 @@ class Vertex(Renderable):
 
         # Else, if water is above altitude become a basin lake
         elif self.water_volume > self.altitude * 1000 and self.altitude > settings.wtr_sea_level:
-            self.is_lake = True
             next_lowest_n = self.find_lowest_neighbor()
             # If the water level rises above that of the lowest adjacent neighbor, dump into it
             if next_lowest_n.water_volume + (next_lowest_n.altitude * 1000) < \
@@ -642,7 +658,6 @@ class Vertex(Renderable):
 
         # Below sea level
         else:
-            self.is_lake = False
             self.water_volume = settings.wtr_sea_level * 1000
             if self.water_flow_ticks:
                 self.water_flow_ticks.clear()
@@ -658,14 +673,19 @@ class Vertex(Renderable):
         if self.altitude > renderer.settings.wtr_sea_level and renderer.settings.do_render_altitudes:
             pygame.draw.circle(renderer.screen, self.color, (self.ss_x, self.ss_y), 3)
 
+        # Render coastlines
+        if renderer.settings.do_render_coastlines and self.is_coastal:
+            for each_neighbor in self.neighbors.keys():
+                if each_neighbor.is_coastal and each_neighbor.y < self.y and each_neighbor.ss_x:
+                    pygame.draw.line(renderer.screen, renderer.settings.clr['black'],
+                                     (self.ss_x, self.ss_y), (each_neighbor.ss_x, each_neighbor.ss_y),
+                                     3)
+
         # Render rivers
         if self.lowest_neighbor and renderer.settings.do_render_rivers:
-            if self.is_lake:
-                pygame.draw.circle(renderer.screen, renderer.settings.clr['river'],
-                                   (self.ss_x, self.ss_y), round(self.water_volume/1000))
-            elif self.lowest_neighbor.ss_x:
+            if self.lowest_neighbor.ss_x:
                 if self.water_flow_rate > renderer.settings.wtr_min_flow_to_render:
-                    river_width = 1 + round(self.water_flow_rate/renderer.settings.wtr_river_flow_as_width)
+                    river_width = 1 + round(self.water_flow_rate / renderer.settings.wtr_river_flow_as_width)
                 else:
                     river_width = 0
                 if river_width > renderer.settings.wtr_max_river_render_width:
@@ -706,8 +726,6 @@ class SeasonData:
         for each_vertex in parent_cell.region.keys():
             self.average_flow += each_vertex.water_flow_rate
         self.average_flow /= len(parent_cell.region)
-
-
 
 
 class Path:

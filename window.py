@@ -61,7 +61,7 @@ class PyGameWindow:
             self.clock.tick(self.settings.framerate)
 
             # If the biome control is on, then we need to gen biomes
-            if self.controls.ctrl_bools['biomes'] and not self.settings.erode_enable:
+            if self.controls.ctrl_bools['biomes']:
                 if self.map.cells[0].last_spring and self.map.cells[0].last_summer and self.map.cells[0].last_autumn and self.map.cells[0].last_winter:
                     self.map.has_biomes = True
                     for each_cell in self.map.cells:

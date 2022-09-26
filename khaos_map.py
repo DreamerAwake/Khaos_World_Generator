@@ -273,14 +273,15 @@ class KhaosMap:
             for each_vertex in self.vertices:
                 each_vertex.erode(self.settings)
 
-            for each_vertex in self.vertices:
-                each_vertex.find_lowest_neighbor()
-
             for each_cell in self.cells:
                 each_cell.find_altitude()
                 each_cell.find_lowest_vertex()
                 each_cell.record_season(self.current_season)
                 each_cell.find_color()
+
+            for each_vertex in self.vertices:
+                each_vertex.find_lowest_neighbor()
+                each_vertex.get_is_coastal()
 
         # If erode is not enabled we still need season data
         else:
