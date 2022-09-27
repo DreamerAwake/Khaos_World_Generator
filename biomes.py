@@ -26,102 +26,93 @@ class Biome:
         """Determines the biome for the cell based on aggregated data."""
         # Aquatic biomes
         if 'aquatic' in self.biome_tags:
-            if self.temp_peak < self.cell.settings.temps_freezing:
+            if 'frozen' in self.biome_tags:
                 self.biome_title = 'frozen ocean'
-            elif self.temp_low < self.cell.settings.temps_freezing:
+            elif 'cold' in self.biome_tags:
                 self.biome_title = 'arctic ocean'
             elif 'coastal' in self.biome_tags:
                 self.biome_title = 'coastal waters'
             else:
                 self.biome_title = 'ocean'
 
-        # Terrain biomes
         else:
-            # First add arid biomes
+            # Arid biomes
             if 'arid' in self.biome_tags:
-                if self.temp_peak > self.cell.settings.biome_desert_temp:
-                    if 'alpine' in self.biome_tags:
-                        self.biome_title = 'arid mountains'
-                    elif 'light rain' in self.biome_tags:
-                        if 'alpine' in self.biome_tags:
-                            self.biome_title = 'arid heath'
-                        else:
-                            self.biome_title = 'arid scrubland'
-                    else:
-                        self.biome_title = 'high desert'
-                elif 'cold' not in self.biome_tags:
-                    self.biome_title = 'low desert'
-                elif 'frozen' not in self.biome_tags:
+                if 'frozen' in self.biome_tags:
+                    self.biome_title = 'tundra'
+                elif 'forested' in self.biome_tags:
+                    self.biome_title = 'savanna'
+                elif 'cold' in self.biome_tags:
                     self.biome_title = 'arid steppe'
+                elif 'light rain' in self.biome_tags or 'coastal' in self.biome_tags:
+                    self.biome_title = 'arid scrubland'
+                elif 'alpine' in self.biome_tags:
+                    self.biome_title = 'arid peaks'
+                elif 'hot' in self.biome_tags:
+                    self.biome_title = 'high desert'
                 else:
-                    if 'alpine' in self.biome_tags:
-                        self.biome_title = 'frozen peak'
-                    elif 'plain' in self.biome_tags or abs(self.cell.y) > 1 - self.cell.settings.atmo_arctic_extent:
-                        self.biome_title = 'tundra'
-                    else:
-                        self.biome_title = 'cold desert'
+                    self.biome_title = 'low desert'
 
             # Dryland biomes
             elif 'dry' in self.biome_tags:
-                if 'forested' not in self.biome_tags:
-                    if 'coastal' in self.biome_tags:
-                        self.biome_title = 'sand dunes'
-                    else:
-                        if 'hot' in self.biome_tags:
-                            self.biome_title = 'savanna'
-                        else:
-                            self.biome_title = 'dry scrubland'
-                elif 'coastal' in self.biome_tags:
-                    self.biome_title = 'coastal dryland forest'
-                elif 'alpine' in self.biome_tags:
-                    self.biome_title = 'dry alpine forest'
-                else:
-                    self.biome_title = 'dryland forest'
-
-            # Average humidity biomes
-            elif 'humid' in self.biome_tags:
-                if 'forested' not in self.biome_tags:
-                    if 'plain' in self.biome_tags:
-                        self.biome_title = 'flood plain'
+                if 'forested' in self.biome_tags:
+                    if 'hot' in self.biome_tags:
+                        self.biome_title = 'savanna'
                     elif 'coastal' in self.biome_tags:
-                        if 'cold' in self.biome_tags:
-                            self.biome_title = 'cold scrubland coastline'
-                        else:
-                            self.biome_title = 'temperate coastline'
+                        self.biome_title = 'coastal dryland forest'
+                    elif 'alpine' in self.biome_tags:
+                        self.biome_title = 'dry alpine forest'
                     else:
-                        self.biome_title = 'meadows'
-
-                elif 'heavy rain' in self.biome_tags:
-                    if abs(self.cell.y) > self.cell.settings.atmo_tropics_extent:
-                        self.biome_title = 'tropical rainforest'
-                    elif self.temp_peak < self.cell.settings.temps_freezing:
-                        self.biome_title = 'frozen forest'
-                    else:
-                        self.biome_title = 'rainforest'
-                elif 'frozen' in self.biome_tags:
-                    self.biome_title = 'frozen forest'
-                elif 'alpine' in self.biome_tags:
-                    self.biome_title = 'alpine forest'
+                        self.biome_title = 'dryland forest'
                 else:
-                    self.biome_title = 'temperate forest'
-
-            # Damp biomes
-            elif 'damp' in self.biome_tags:
-                if 'forested' in self.biome_tags and 'heavy rain' in self.biome_tags:
-                    if abs(self.cell.y) < self.cell.settings.atmo_tropics_extent:
-                        self.biome_title = 'tropical rainforest'
-                    elif 'frozen' in self.biome_tags:
-                        self.biome_title = 'frozen forest'
+                    if 'frozen' in self.biome_tags:
+                        self.biome_title = 'tundra'
+                    elif 'hot' in self.biome_tags:
+                        self.biome_title = 'low desert'
+                    elif 'alpine' in self.biome_tags:
+                        self.biome_title = 'heath'
+                    elif 'light rain' in self.biome_tags:
+                        self.biome_title = 'steppe'
                     else:
-                        self.biome_title = 'rainforest'
-                elif 'forested' in self.biome_tags:
-                    if abs(self.cell.y) < self.cell.settings.atmo_tropics_extent:
-                        if 'hot' in self.biome_tags:
+                        self.biome_title = 'dry scrubland'
+
+            # Humid biomes
+            elif 'humid' in self.biome_tags:
+                if 'forested' in self.biome_tags:
+                    if 'hot' in self.biome_tags:
+                        if 'heavy rain' in self.biome_tags:
                             self.biome_title = 'jungle'
                         else:
                             self.biome_title = 'tropical forest'
                     elif 'frozen' in self.biome_tags:
                         self.biome_title = 'frozen forest'
+                    elif 'alpine' in self.biome_tags:
+                        self.biome_title = 'alpine forest'
+                    elif 'heavy rain' in self.biome_tags:
+                        self.biome_title = 'rainforest'
+                    else:
+                        self.biome_title = 'temperate forest'
+                elif 'plain' in self.biome_tags:
+                    self.biome_title = 'flood plain'
+                elif 'coastal' in self.biome_tags:
+                    if 'cold' in self.biome_tags:
+                        self.biome_title = 'cold scrubland coastline'
+                    if 'heavy rain' not in self.biome_tags and 'light rain' not in self.biome_tags:
+                        self.biome_title = 'sand dunes'
+                    else:
+                        self.biome_title = 'temperate coastline'
+                else:
+                    self.biome_title = 'meadow'
+
+            # Damp biomes
+            elif 'damp' in self.biome_tags:
+                if 'forested' in self.biome_tags:
+                    if 'hot' in self.biome_tags and 'heavy rain' in self.biome_tags:
+                        self.biome_title = 'jungle'
+                    elif 'frozen' in self.biome_tags:
+                        self.biome_title = 'frozen forest'
+                    elif 'heavy rain' in self.biome_tags:
+                        self.biome_title = 'rainforest'
                     else:
                         self.biome_title = 'wetland forest'
                 elif 'plain' in self.biome_tags:
@@ -135,6 +126,7 @@ class Biome:
                         self.biome_title = 'marsh'
                 else:
                     self.biome_title = 'swamp'
+
             else:
                 self.biome_title = 'undefined land'
 
@@ -147,7 +139,7 @@ class Biome:
             tag_cloud.append('frozen')
         elif self.temp_low < self.cell.settings.temps_freezing:
             tag_cloud.append('cold')
-        elif self.temp_peak > self.cell.settings.temps_equatorial:
+        elif self.temp_peak > self.cell.settings.biome_desert_temp:
             tag_cloud.append('hot')
 
         # Get height tags
@@ -187,6 +179,7 @@ class Biome:
             for cell_neighbor in self.cell.neighbors.keys():
                 if cell_neighbor.altitude > self.cell.settings.wtr_sea_level:
                     tag_cloud.append('coastal')
+                    break
             landlocked = False
 
         if landlocked:
@@ -205,10 +198,12 @@ class Biome:
         stg = self.cell.settings  # alias
 
         alt_tint = (200 * self.cell.altitude * stg.biome_alt_tint_strength) - (100 * stg.biome_alt_tint_strength)
+        temp_tint = ((((self.temp_low + self.temp_peak) / 2) - self.cell.settings.temps_lowest) / (self.cell.settings.temps_highest - self.cell.settings.temps_lowest))
+        temp_tint = (200 * temp_tint * stg.biome_temp_tint_strength) - (100 * stg.biome_temp_tint_strength)
 
-        r = (stg.biome_colors[self.biome_title][0] * stg.biome_tint_strength) + alt_tint
+        r = (stg.biome_colors[self.biome_title][0] * stg.biome_tint_strength) + alt_tint + temp_tint
         g = (stg.biome_colors[self.biome_title][1] * stg.biome_tint_strength) + alt_tint
-        b = (stg.biome_colors[self.biome_title][2] * stg.biome_tint_strength) + alt_tint
+        b = (stg.biome_colors[self.biome_title][2] * stg.biome_tint_strength) + alt_tint - temp_tint
 
         if r > 255:
             r = 255

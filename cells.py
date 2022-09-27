@@ -374,7 +374,7 @@ class Cell(Renderable):
         # Drop a percentage of moisture based on current altitude and temperature
         temps_mod = abs((self.temperature - self.settings.temps_freezing) - self.settings.temps_highest) / \
                     (self.settings.temps_highest - self.settings.temps_freezing)
-        rainfall = (self.humidity + self.humidity_delta) * (2 * self.altitude) * temps_mod
+        rainfall = (self.humidity + self.humidity_delta) * (self.settings.wtr_rainfall_altitude_mod * self.altitude) * temps_mod
         self.humidity_delta -= rainfall
         self.pressure_delta -= rainfall
         self.rainfall_this_year += rainfall * self.settings.wtr_rainfall_mod
@@ -677,7 +677,7 @@ class Vertex(Renderable):
         if renderer.settings.do_render_coastlines and self.is_coastal:
             for each_neighbor in self.neighbors.keys():
                 if each_neighbor.is_coastal and each_neighbor.y < self.y and each_neighbor.ss_x:
-                    pygame.draw.line(renderer.screen, renderer.settings.clr['black'],
+                    pygame.draw.line(renderer.screen, renderer.settings.clr['white'],
                                      (self.ss_x, self.ss_y), (each_neighbor.ss_x, each_neighbor.ss_y),
                                      3)
 
