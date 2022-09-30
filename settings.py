@@ -12,7 +12,7 @@ class Settings:
         self.map = None
 
         # Set the random seed
-        self.seed = 135
+        self.seed = 139
         numpy.random.seed(self.seed)
         random.seed(self.seed)
 
@@ -22,7 +22,7 @@ class Settings:
 
         # Pygame settings
         self.enableAA = True
-        self.window_size = (1800, 1000)
+        self.window_size = (1200, 700)
         self.text_box_width = 350
         if self.enableAA:
             self.render_size = (self.window_size[0] * 2, self.window_size[1] * 2)
@@ -54,7 +54,7 @@ class Settings:
         self.font_body = pygame.font.Font('fonts/reemkufi.ttf', self.font_body_size)
 
         # Voronoi generation settings
-        self.total_cells = 5000
+        self.total_cells = 2500
         self.relax_passes = 5
 
         # Terrain generation settings
@@ -86,15 +86,15 @@ class Settings:
         self.wind_resistance = 0.015  # Resistance offered by the soft cap and by air friction
         self.wind_presim = 0        # Number of wind ticks to presimulate in worldgen
 
-        self.temps_equatorial = 95.0    # The target temperature for the equator (in F, because I am a dumb American)
+        self.temps_equatorial = 90.0    # The target temperature for the equator (in F, because I am a dumb American)
         self.temps_freezing = 32.0   # A number used by the atmosphere renderer to determine the cold gradient
         self.temps_lowest = -35.0       # The lowest allowed temperature
         self.temps_highest = 130           # The temperature cap
         self.temps_equatorial_rise = 10.0  # The rise in temperature added at the equator to radiate heat to the map
-        self.temps_arctic_cooling = 5.5  # The amount of temp lost in the arctic regions per tick
-        self.temps_natural_cooling = 0.05  # Amount of heat lost each tick
+        self.temps_arctic_cooling = 9.0  # The amount of temp lost in the arctic regions per tick
+        self.temps_natural_cooling = 0.3  # Amount of heat lost each tick
         self.temps_alt_cooling_threshold = 0.75  # The minimum altitude to experience elevation cooling effects
-        self.temps_alt_cooling = 4.5  # The amount of cooling applied to an altitude of 1.0
+        self.temps_alt_cooling = 5.0  # The amount of cooling applied to an altitude of 1.0
         self.temps_critical_angle = 3.14  # The maximum angle (in radians) that allows a tile's wind to transfer heat
         self.temps_heat_bias = 1.6  # This is applied as a multiplier to heat propagation, inverse is applied to cold
 
@@ -126,8 +126,8 @@ class Settings:
         self.biome_humid_low = 0.35  # Average humidity required for normal humidity biomes to form
         self.biome_arid = 0.07  # Threshold for developing arid environments
         self.biome_desert_temp = 80  # Threshold temperature for deserts
-        self.biome_heavy_rainfall = 150  # Annual rainfall required to count as "heavy rainfall"
-        self.biome_light_rainfall = 30  # Annual rainfall required to count as "light rainfall"
+        self.biome_heavy_rainfall = 35  # Annual rainfall required to count as "heavy rainfall"
+        self.biome_light_rainfall = 15  # Annual rainfall required to count as "light rainfall"
         self.biome_forest_water_req = 0.4  # The required cell hydration for a forest to form
         self.biome_rainforest_req = 0.6  # The required cell hydration for a rainforest to form
         self.biome_alpine_line = 0.78  # The lowest extent of alpine biomes
@@ -142,6 +142,7 @@ class Settings:
                              'arctic ocean': (120, 120, 240),
                              'coastal waters': (100, 128, 220),
                              'ocean': (60, 90, 220),
+                             'frozen peaks': (232, 232, 255),
                              'tundra': (200, 212, 255),
                              'arid scrubland': (235, 205, 135),
                              'arid peaks': (100, 64, 48),

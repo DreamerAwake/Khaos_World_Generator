@@ -7,9 +7,9 @@ from settings import *
 
 class KhaosMap:
     """This map contains a set of objects describing a voronoi diagram produced from scipy.spatial.Voronoi."""
-    def __init__(self):
-        # Instantiates a settings object
-        self.settings = Settings()
+    def __init__(self, settings):
+        # Instantiates the map settings object
+        self.settings = settings
         self.settings.map = self
         self.display_text = None
         self.season_text = None

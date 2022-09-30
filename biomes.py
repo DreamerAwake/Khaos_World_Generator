@@ -66,7 +66,10 @@ class Biome:
                         self.biome_title = 'dryland forest'
                 else:
                     if 'frozen' in self.biome_tags:
-                        self.biome_title = 'tundra'
+                        if 'alpine' in self.biome_tags:
+                            self.biome_title = 'frozen peaks'
+                        else:
+                            self.biome_title = 'tundra'
                     elif 'hot' in self.biome_tags:
                         self.biome_title = 'low desert'
                     elif 'alpine' in self.biome_tags:

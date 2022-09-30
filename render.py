@@ -26,10 +26,10 @@ class RenderQ:
             if blit_to:
                 blit_to.blit(self.screen, (0, 0))
 
-        # Apply AA
-        if self.AA:
-            aa = pygame.transform.smoothscale(self.screen, self.settings.window_size)
-            self.aa_screen.blit(aa, (0, 0))
+            # Apply AA
+            if self.AA:
+                aa = pygame.transform.smoothscale(self.screen, self.settings.window_size)
+                self.aa_screen.blit(aa, (0, 0))
 
     def enable_AA(self, aa_screen):
         """Enable antialiasing for this renderQ. The given screen becomes the final rendering target.."""
