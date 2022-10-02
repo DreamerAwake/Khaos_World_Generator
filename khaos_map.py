@@ -11,8 +11,6 @@ class KhaosMap:
         # Instantiates the map settings object
         self.settings = settings
         self.settings.map = self
-        self.display_text = None
-        self.season_text = None
         self.has_biomes = False
         self.current_season = ''
 
@@ -371,13 +369,6 @@ class KhaosMap:
             self.end_season()
             self.current_season = self.get_season()
 
-    def update_textbox(self):
-        """Updates the textbox to reflect the current focus cell of the map."""
-        if self.focus_cell is not None:
-            self.display_text.write(self.focus_cell.write())
-
-        self.season_text.write(self.current_season.title())
-
 
 def lloyds_relax(vor):
     """Applies Lloyd's algorithm to the given voronoi diagram, finding the centroid of each region and then passing
@@ -402,7 +393,3 @@ def lloyds_relax(vor):
             else:
                 centroids = numpy.append(centroids, [centroid], axis=0)
     return sptl.Voronoi(centroids)
-
-
-if __name__ == "__main__":
-    new_map = KhaosMap()

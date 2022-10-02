@@ -21,14 +21,12 @@ class Settings:
         self.debug_detail = 2       # All debug console calls with a LESSER debug detail will show. Range of (1-5)
 
         # Pygame settings
-        self.enableAA = True
-        self.window_size = (1200, 700)
+        self.enableAA = False
+        self.window_width = 1900
+        self.window_aspect = (16, 9)
+        self.window_size = (self.window_width, round((self.window_width/self.window_aspect[0])*self.window_aspect[1]))
         self.text_box_width = 350
-        if self.enableAA:
-            self.render_size = (self.window_size[0] * 2, self.window_size[1] * 2)
-            self.text_box_width *= 2
-        else:
-            self.render_size = (self.window_size[0], self.window_size[1])
+        self.render_size = (self.window_size[0], self.window_size[1])
         self.screen_size = (self.render_size[0] - self.text_box_width, self.render_size[1])
         self.framerate = 60
         self.do_render_altitudes = False
@@ -43,13 +41,18 @@ class Settings:
                     'ocean': (128, 128, 224),
                     'river': (32, 32, 96)}
 
+        # Menu settings
+        self.button_hover_delay = 1   # The delay in frames from hovering over a button to it showing its hovered state
+        self.start_menu_button_size = (282, 80)
+        self.small_square_button_size = (30, 30)
+        self.medium_square_button_size = (50, 50)
+        self.slider_width = 160
+        self.drop_down_width = 85
+
         # Text settings
         pygame.font.init()
         self.font_head_size = 30
         self.font_body_size = 18
-        if self.enableAA:
-            self.font_head_size *= 2
-            self.font_body_size *= 2
         self.font_head = pygame.font.Font('fonts/sylfaen.ttf', self.font_head_size)
         self.font_body = pygame.font.Font('fonts/reemkufi.ttf', self.font_body_size)
 
@@ -66,8 +69,8 @@ class Settings:
         self.tect_smoothing_repetitions = 2  # Number of times to perform altitude smoothing
         self.tect_final_alt_mod = 0.5       # Determines the middlepoint of each plate's altitude gradient
 
-        self.mtn_peak_reduction_factor = 0.05    # The maximum amount that mountain peaks are allowed to sit below 1.0
-        self.mtn_peak_weight = 0.9           # The weight given to the peak when averaging for mountain ridges
+        self.mtn_peak_reduction_factor = 0.09    # The maximum amount that mountain peaks are allowed to sit below 1.0
+        self.mtn_peak_weight = 0.91           # The weight given to the peak when averaging for mountain ridges
         self.mtn_max_node_chain = 300        # Number vertexes in a mountain chain at maximum
         self.mtn_fork_chance = 0.15      # Percent chance a mountain node will fork
         self.mtn_ridges_max = 25        # Sets the maximum number of mountain ridges placed above the tectonic peaks
@@ -80,7 +83,7 @@ class Settings:
         self.wind_streams_vector = Vector2(0.11, 0)  # The vector of the jetstreams added to wind vectors
         self.wind_deflection_weight = 0.7  # The weight given to the effect of a deflection modifier
         self.wind_take_strength = 0.22  # The percentage of a cell's wind that is lost to take_wind at wind_multi 1
-        self.wind_critical_angle = 1.7  # Maximum angle that wind will
+        self.wind_critical_angle = 2.2  # Maximum angle that wind will
         self.wind_soft_cap = 0.7  # Soft cap on max wind speed
         self.wind_hard_cap = 1.0  # Hard cap for wind speed
         self.wind_resistance = 0.015  # Resistance offered by the soft cap and by air friction
@@ -101,7 +104,7 @@ class Settings:
         self.baro_transfer_rate = 0.3  # A multiplier on the value of pressure transfer between cells
         self.baro_wind_effect = 0.25  # The strength of pressure systems' ability to dampen wind interaction
 
-        self.season_ticks_per_year = 200  # The number of atmosphere ticks per full 4 season year
+        self.season_ticks_per_year = 360  # The number of atmosphere ticks per full 4 season year
         self.season_ticks_this_year = 0  # Controls the part of the year you start in. Must be lower than the above
         self.season_incline = 0.25  # The incline of the heat gradient relative to the equator at the solstices
         self.season_ticks_modifier = 0.0  # A Modifier calculated internally by the function .find_season_multi
@@ -115,8 +118,8 @@ class Settings:
         self.wtr_reabsorption = 0.5  # A multiplier on the rate that running water reabsorbs into the soil
         self.wtr_flow_ticks_to_ave = 10  # Number of previous ticks of waterflow averaged to produce a flowrate
         self.wtr_min_flow_to_render = 0  # Minimum flow rate for rendering to occur on a river
-        self.wtr_river_flow_as_width = 250  # River flow is divided by this number to produce the render width
-        self.wtr_max_river_render_width = 4  # The maximum width of a river when rendered
+        self.wtr_river_flow_as_width = 150  # River flow is divided by this number to produce the render width
+        self.wtr_max_river_render_width = 5  # The maximum width of a river when rendered
 
         self.erode_enable = True  # Whether erosion is calculated at all or not
         self.erode_mod = 1.0  # The multiplier applied to erosion rates
@@ -175,10 +178,62 @@ class Settings:
                              'swamp': (96, 196, 100),
                              'undefined land': (0, 0, 0)}
 
-        # Anti-aliasing modifications
         if self.enableAA:
+            self.set_antialias(self.enableAA)
+
+    def set_antialias(self, enableAA):
+        """Adjusts all necessary settings for antialiasing. If True, sets numbers to run under AA, if False,
+        it will reverse the changes made."""
+        if enableAA and not self.enableAA:
+            self.enableAA = True
+
+            # Pygame settings
+            self.render_size = (self.window_size[0] * 2, self.window_size[1] * 2)
+            self.screen_size = (self.render_size[0] - self.text_box_width, self.render_size[1])
+            self.text_box_width *= 2
+
+            # Menu settings
+            self.start_menu_button_size = (self.start_menu_button_size[0] * 2, self.start_menu_button_size[1] * 2)
+            self.small_square_button_size = (self.small_square_button_size[0] * 2, self.small_square_button_size[1] * 2)
+            self.medium_square_button_size = (self.medium_square_button_size[0] * 2, self.medium_square_button_size[1] * 2)
+            self.slider_width *= 2
+            self.drop_down_width *= 2
+
+            # Fonts
+            self.font_head_size *= 2
+            self.font_body_size *= 2
+
+            # River rendering
             self.wtr_river_flow_as_width /= 2
             self.wtr_max_river_render_width *= 2
+            return True
+
+        elif not enableAA and self.enableAA:
+            self.enableAA = False
+
+            # Pygame settings
+            self.render_size = (self.window_size[0] / 2, self.window_size[1] / 2)
+            self.screen_size = (self.render_size[0] - self.text_box_width, self.render_size[1])
+            self.text_box_width /= 2
+
+            # Menu settings
+            self.start_menu_button_size = (self.start_menu_button_size[0] / 2, self.start_menu_button_size[1] / 2)
+            self.small_square_button_size = (self.small_square_button_size[0] / 2, self.small_square_button_size[1] / 2)
+            self.medium_square_button_size = (self.medium_square_button_size[0] / 2, self.medium_square_button_size[1] / 2)
+            self.slider_width /= 2
+            self.drop_down_width /= 2
+
+            # Fonts
+            self.font_head_size /= 2
+            self.font_body_size /= 2
+
+            # River rendering
+            self.wtr_river_flow_as_width *= 2
+            self.wtr_max_river_render_width /= 2
+            return True
+
+        else:
+            return False
 
     def db_print(self, string, detail=0):
         """A debugging function that allows selective printing of debug console text based on a
