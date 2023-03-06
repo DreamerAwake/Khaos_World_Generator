@@ -9,6 +9,8 @@ class Heightmap:
     Requires either both a resolution and a plate number, or a pre-built cell array to be initialized."""
 
     def __init__(self, resolution_tuple=(10, 10), number_of_plates=10, use_map=None):
+        self.resolution = resolution_tuple
+
         # If passed a tectonic cell array, use that instead of generating your own map.
         if use_map is not None:
             self.map = use_map
@@ -70,7 +72,7 @@ class Heightmap:
                 b = self.map[x][y].altitude * 255"""
 
                 r, g, b = self.map[x][y].altitude * 255, self.map[x][y].altitude * 255, self.map[x][y].altitude * 255
-                if r < 100:
+                if r < 50:
                     r, g = 0, 0
 
                 # Bound each value
@@ -94,12 +96,43 @@ class Heightmap:
 
         return heightmap_surface
 
+    def smooth_altitudes(self, wrap_x=False):
+        """Smooths the altitudes of all cells by averaging them by their neighbors."""
+        for x in range(0, len(self.map)):
+            for y in range(0, len(self.map[0])):
+                # Find the total altitude in each of the neighboring cells.
+                new_altitude = self.map[x][y].altitude
+                elements = 1
+
+                if x == 0 and wrap_x:
+                    new_altitude += self.map[-1][y].altitude
+                    elements += 1
+                elif x > 0:
+                    new_altitude += self.map[x - 1][y].altitude
+                    elements += 1
+                if x < len(self.map) - 1:
+                    new_altitude += self.map[x + 1][y].altitude
+                    elements += 1
+                elif wrap_x:
+                    new_altitude += self.map[1][y].altitude
+                    elements += 1
+
+                if y > 0:
+                    new_altitude += self.map[x][y - 1].altitude
+                    elements += 1
+                if y < len(self.map[0]) - 1:
+                    new_altitude += self.map[x][y + 1].altitude
+                    elements += 1
+
+                self.map[x][y].altitude = new_altitude / elements
+
+
 class DeformCrawler:
     """Crawls over all of the tectonic cells and issues them updates based on their current state. Can crawl
     asynchronously with rendering to maintain framerate even under high processing strain. wrap_horizontal determines
     if the crawler considers cells in the leftmost and rightmost columns to be adjacent to one another on their
     out-facing side."""
-    def __init__(self, parent_heightmap, wrap_horizontal=False, deform_weight=4.0, deform_speed=0.1):
+    def __init__(self, parent_heightmap, wrap_horizontal=True, deform_weight=4.0, deform_speed=0.1):
         self.parent_map = parent_heightmap  # The source map to be deformed
         self.deform_map = self.parent_map.copy()    # The internal map for storing deformations mid-cycle
 
@@ -111,6 +144,7 @@ class DeformCrawler:
         # Crawler tracking settings
         self.resolution_x, self.resolution_y = len(self.parent_map), len(self.parent_map[0])
         self.x, self.y = 0, 0
+        self.completed_full_passes = 0
 
     def deform_accretion(self, donator_xy, target_xy):
         """Accretion is the process whereby the donator cell places a portion of its vector and altitude into the
@@ -239,7 +273,7 @@ class DeformCrawler:
         else:
             return False
 
-        if self.y < len(self.parent_map) - 1:
+        if self.y < len(self.parent_map[0]) - 1:
             neighbor_y = self.y + neighbor_direction[1]
         else:
             return False
@@ -279,6 +313,10 @@ class DeformCrawler:
     def end_of_map(self):
         """Handles the crawler reaching the end of the map."""
         self.x, self.y = 0, 0
+        self.completed_full_passes += 1
+        print(self.completed_full_passes)
+        self.deform_map.smooth_altitudes(wrap_x=self.wrap_x)
+        self.deform_map.smooth_altitudes(wrap_x=self.wrap_x)
         self.parent_map.match(self.deform_map)
 
     def record_deform(self):
@@ -389,9 +427,9 @@ def get_v2_direction(vector2):
             return 0, -1    # North
 
 
-def get_sigmoid_function(x, slope=1.0, x_offset=0.0):
+def get_sigmoid_function(x, slope=1.0, x_offset=0.0, y_offset=0.0, scale=1.0):
     """Returns the product of X in a logistic sigmoid function with the given parameters."""
-    return 1 / (1 + math.e**(-slope * (x - x_offset)))
+    return (scale / (1 + math.e**(-slope * (x - x_offset)))) + y_offset
 
 
 def get_random_floats(number):

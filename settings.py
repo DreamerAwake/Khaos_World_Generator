@@ -12,7 +12,7 @@ class Settings:
         self.map = None
 
         # Set the random seed
-        self.seed = 129
+        self.seed = 0
         numpy.random.seed(self.seed)
         random.seed(self.seed)
 
@@ -53,7 +53,7 @@ class Settings:
         self.font_body = pygame.font.Font('fonts/reemkufi.ttf', self.font_body_size)
 
         # Voronoi generation settings
-        self.total_cells = 500
+        self.total_cells = 2500
         self.relax_passes = 5
 
         # Terrain generation settings
