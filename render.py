@@ -43,12 +43,12 @@ class RenderQ:
 
     def add(self, *renderables, place_on_bottom=False, place_at=0):
         """Adds each renderable object passed to the RenderQ"""
-        for renderable in renderables:
+        for iteration, renderable in enumerate(renderables):
             if renderable not in self.queue:
                 if place_on_bottom:
-                    self.queue.insert(0, renderable)
+                    self.queue.insert(iteration, renderable)
                 elif place_at != 0:
-                    self.queue.insert(place_at, renderable)
+                    self.queue.insert(place_at + iteration, renderable)
                 else:
                     self.queue.append(renderable)
 

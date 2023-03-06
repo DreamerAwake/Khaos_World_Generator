@@ -62,13 +62,16 @@ class Cell(Renderable):
         self.is_focus = False
 
     def find_altitude(self):
-        """Finds the average altitude of the vertices and makes it the total altitude of the cell"""
+        """Finds the average altitude of the vertices and makes it the total altitude of the cell,
+        also calls update to find_wind_deflection"""
         self.altitude = 0.0
 
         for each_vertex in self.region.keys():
             self.altitude += each_vertex.altitude
 
         self.altitude /= len(self.region)
+
+        self.find_wind_deflection()
 
     def find_biome(self):
         """Creates a biome for the cell"""
@@ -428,6 +431,62 @@ class Cell(Renderable):
 
         return output
 
+    def load_from_dict(self, cell_dict):
+        """Saves the cell to a dict and returns that dict."""
+        if cell_dict['type'] != 'cell':
+            return False
+
+        self.x = cell_dict['x']
+        self.y = cell_dict['y']
+        self.ss_x, self.ss_y = self.settings.project_to_screen(self.x, self.y)
+
+        # Associated Terrain data
+        self.altitude = cell_dict['altitude']
+        self.wind_deflection = pygame.Vector2(cell_dict['wind_deflection_x'], cell_dict['wind_deflection_y'])
+        self.wind_vector = pygame.Vector2(cell_dict['wind_vector_x'], cell_dict['wind_vector_y'])
+        self.temperature = cell_dict['temperature']
+        self.humidity = cell_dict['humidity']
+
+        # Rainfall data
+        self.rainfall_this_year = cell_dict['rainfall_this_year']
+        self.rainfall_last_year = cell_dict['rainfall_last_year']
+        self.watertable = cell_dict['watertable']
+
+        self.pressure = cell_dict['pressure']
+
+        self.polygon = cell_dict['polygon']
+        self.cell_color = cell_dict['cell_color']
+
+        return cell_dict
+
+    def save_to_dict(self):
+        """Saves the cell to a dict and returns that dict."""
+        cell_dict = {'type': 'cell'}
+
+        cell_dict['x'] = self.x
+        cell_dict['y'] = self.y
+
+        # Associated Terrain data
+        cell_dict['altitude'] = self.altitude
+        cell_dict['wind_deflection_x'] = self.wind_deflection.x
+        cell_dict['wind_deflection_y'] = self.wind_deflection.y
+        cell_dict['wind_vector_x'] = self.wind_vector.x
+        cell_dict['wind_vector_y'] = self.wind_vector.y
+        cell_dict['temperature'] = self.temperature
+        cell_dict['humidity'] = self.humidity
+
+        # Rainfall data
+        cell_dict['rainfall_this_year'] = self.rainfall_this_year
+        cell_dict['rainfall_last_year'] = self.rainfall_last_year
+        cell_dict['watertable'] = self.watertable
+
+        cell_dict['pressure'] = self.pressure
+
+        cell_dict['polygon'] = self.polygon
+        cell_dict['cell_color'] = self.cell_color
+
+        return cell_dict
+
     def update(self, renderer):
         """The update function of the Cell as a Renderable object. Calls to pygame to draw the cell."""
         # If the polygon is None, then this item has never run before, calculate the polygon
@@ -600,6 +659,53 @@ class Vertex(Renderable):
             self.lowest_neighbor = lowest_neighbor
 
         return lowest_neighbor
+
+    def load_from_dict(self, vert_dict):
+        """Loads the cell from a dict."""
+        if vert_dict['type'] != 'vertex':
+            return False
+
+        self.x = vert_dict['x']
+        self.y = vert_dict['y']
+
+        # Associated Terrain data
+        self.altitude = vert_dict['altitude']
+        self.is_peak = vert_dict['is_peak']
+        self.is_coastal = vert_dict['is_coastal']
+
+        # Hydrology data
+        self.water_volume = vert_dict['water_volume']
+        self.water_flow_ticks = vert_dict['water_flow_ticks']
+        self.water_flow_ticks_since_save = vert_dict['water_flow_ticks_since_save']
+        self.water_flow_this_season = vert_dict['water_flow_this_season']
+        self.water_flow_rate = vert_dict['water_flow_rate']
+
+        # Rendering data
+        self.color = vert_dict['color']
+
+    def save_to_dict(self):
+        """Saves the cell to a dict and returns that dict."""
+        cell_dict = {'type': 'vertex'}
+
+        cell_dict['x'] = self.x
+        cell_dict['y'] = self.y
+
+        # Associated Terrain data
+        cell_dict['altitude'] = self.altitude
+        cell_dict['is_peak'] = self.is_peak
+        cell_dict['is_coastal'] = self.is_coastal
+
+        # Hydrology data
+        cell_dict['water_volume'] = self.water_volume
+        cell_dict['water_flow_ticks'] = self.water_flow_ticks
+        cell_dict['water_flow_ticks_since_save'] = self.water_flow_ticks_since_save
+        cell_dict['water_flow_this_season'] = self.water_flow_this_season
+        cell_dict['water_flow_rate'] = self.water_flow_rate
+
+        # Rendering data
+        cell_dict['color'] = self.color
+
+        return cell_dict
 
     def update_hydrology(self, settings):
         """Updates this vertex's hydrology."""

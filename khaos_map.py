@@ -7,23 +7,36 @@ from settings import *
 
 class KhaosMap:
     """This map contains a set of objects describing a voronoi diagram produced from scipy.spatial.Voronoi."""
-    def __init__(self, settings):
-        # Instantiates the map settings object
+    def __init__(self, settings, file_path=None):
+        # Instantiates the map's basic data structures
         self.settings = settings
         self.settings.map = self
         self.has_biomes = False
         self.current_season = ''
+        self.voronoi = None
+        self.vor_generators = None
+        self.cells = None
+        self.vertices = None
+        self.far_x = None
+        self.far_y = None
 
+        if file_path:
+            self.load(file_path)
+
+        else:
+            self.init_new()
+
+    def init_new(self):
+        """Initialize the objects for a newly generated map."""
         dbprint = self.settings.db_print  # alias
 
         # Generates the initial voronoi object and runs the lloyds relaxation to regularize the cell sizes.
         dbprint("Generating voronoi diagram...")
-        self.voronoi = self.gen_vor()
+        self.voronoi, self.vor_generators = self.gen_vor()
 
         # Uses the voronoi diagram to produce the Cell and Vertex objects for the map.
         dbprint("Creating map objects...")
         self.cells, self.vertices = self.gen_map_objs(self.voronoi)
-        self.focus_cell = None
 
         # Find the furthest x and y coordinates in the voronoi at this point, store them for later.
         self.far_x, self.far_y = self.get_furthest_members()
@@ -31,7 +44,7 @@ class KhaosMap:
         # Generate the altitudes for the vertices and the cells
         dbprint("Beginning altitude generation...")
         dbprint("Locating tectonic plates...", detail=2)
-        plate_centers = self.get_plate_centers()   # Finds the plates used for altitude generation
+        plate_centers = self.get_plate_centers()  # Finds the plates used for altitude generation
         slopes = self.get_plate_slopes(plate_centers)
 
         dbprint("Deriving altitudes...", detail=2)
@@ -51,7 +64,6 @@ class KhaosMap:
         for each_cell in self.cells:
             each_cell.find_screen_space()
             each_cell.find_altitude()
-            each_cell.find_wind_deflection()
             each_cell.find_lowest_vertex()
 
         for each_vertex in self.vertices:
@@ -73,12 +85,13 @@ class KhaosMap:
 
         # Make the first voronoi diagram
         vor = sptl.Voronoi(points)
+        vor_generators = None
 
         # Relax passes
         for passes in range(0, self.settings.relax_passes):
-            vor = lloyds_relax(vor)
+            vor, vor_generators = lloyds_relax(vor)
 
-        return vor
+        return vor, vor_generators
 
     def gen_map_objs(self, vor):
         """Returns a list of Cell objects and a list of Vertex objects, drawn from the provided voronoi diagram."""
@@ -314,7 +327,7 @@ class KhaosMap:
         y_dist = 0
 
         for each_vertex in self.vertices:
-            shortest_dist = 3.0
+            shortest_dist = 10.0
             best_plate_index = None
 
             # Finds the closest plate
@@ -344,6 +357,62 @@ class KhaosMap:
             # 0.0 is simply an altitude floor
             if each_vertex.altitude < 0.0:
                 each_vertex.altitude = 0.0
+
+    def save(self):
+        """Save the map to file."""
+        cell_file = []
+        vertex_file = []
+
+        for each_cell in self.cells:
+            cell_file.append(each_cell.save_to_dict())
+
+        for each_vertex in self.vertices:
+            vertex_file.append(each_vertex.save_to_dict())
+
+        stg_file = self.settings.save_to_dict()
+
+        save_file = {'cells': cell_file, 'vertices': vertex_file, 'stg': stg_file,
+                     'vor_generators': self.vor_generators, 'season': self.current_season
+                     }
+
+        with open(f"saves/map{self.settings.seed}-{self.settings.total_cells}.json", 'w') as file:
+            json.dump(save_file, file)
+
+    def load(self, file_path):
+        """Load a map from a file."""
+
+        with open(file_path) as file:
+            load_file = json.load(file)
+
+        self.settings.load_from_dict(load_file['stg'])
+
+        self.vor_generators = load_file['vor_generators']
+        self.voronoi = sptl.Voronoi(self.vor_generators)
+
+        self.cells = []
+        for each_cell_dict in load_file['cells']:
+            cell = Cell((0, 0), self.settings)
+            cell.load_from_dict(each_cell_dict)
+            self.cells.append(cell)
+
+        self.vertices = []
+        for each_vert_dict in load_file['vertices']:
+            vert = Vertex((0, 0))
+            vert.load_from_dict(each_vert_dict)
+            self.vertices.append(vert)
+
+        self.far_x, self.far_y = self.get_furthest_members()
+        self.current_season = load_file['season']
+
+        for index, each_cell in enumerate(self.cells):
+            each_cell.find_region(index, self.voronoi, self.vertices)
+            each_cell.find_neighbors(index, self.voronoi, self.cells)
+            each_cell.find_screen_space()
+            each_cell.find_lowest_vertex()
+
+        for index, each_vertex in enumerate(self.vertices):
+            each_vertex.find_neighbors(index, self.voronoi, self.vertices)
+            each_vertex.find_lowest_neighbor()
 
     def update_atmosphere(self):
         """Updates the map-wide airflow by a single tick."""
@@ -392,4 +461,4 @@ def lloyds_relax(vor):
                 centroids = numpy.array([centroid])
             else:
                 centroids = numpy.append(centroids, [centroid], axis=0)
-    return sptl.Voronoi(centroids)
+    return sptl.Voronoi(centroids), centroids

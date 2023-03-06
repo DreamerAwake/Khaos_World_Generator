@@ -303,10 +303,16 @@ class DropdownBox(MenuButton):
         self.img_clean = self.img.copy()
         self.render_value()
 
-    def render_value(self):
+    def render_value(self, custom_value=None):
         """Rerenders the self.img to reflect the current value."""
         self.img = self.img_clean.copy()
-        self.img.blit(self.stg.font_body.render(self.current_value, True, self.stg.clr['black']),
+
+        if custom_value:
+            display_value = custom_value
+        else:
+            display_value = self.current_value
+
+        self.img.blit(self.stg.font_body.render(display_value, True, self.stg.clr['black']),
                       (self.stg.small_square_button_size[0] * 0.7, self.stg.small_square_button_size[1] * 0.04))
 
     def make_buttons(self, list_of_options):

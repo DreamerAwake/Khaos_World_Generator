@@ -1,3 +1,4 @@
+import json
 import math
 
 from pygame.math import Vector2
@@ -10,6 +11,9 @@ class Settings:
     """Contains the settings for the KhaosMap."""
     def __init__(self):
         self.map = None
+        # Set the version number
+        self.version = 'V0.01.01'  # Format of V(release).(major version).(patch version)
+        self.compatible_versions = []
 
         # Set the random seed
         self.seed = 139
@@ -22,10 +26,10 @@ class Settings:
 
         # Pygame settings
         self.enableAA = False
-        self.window_width = 1900
+        self.window_width = 1200
         self.window_aspect = (16, 9)
         self.window_size = (self.window_width, round((self.window_width/self.window_aspect[0])*self.window_aspect[1]))
-        self.text_box_width = 350
+        self.text_box_width = 0
         self.render_size = (self.window_size[0], self.window_size[1])
         self.screen_size = (self.render_size[0] - self.text_box_width, self.render_size[1])
         self.framerate = 60
@@ -43,7 +47,7 @@ class Settings:
 
         # Menu settings
         self.button_hover_delay = 1   # The delay in frames from hovering over a button to it showing its hovered state
-        self.start_menu_button_size = (282, 80)
+        self.start_menu_button_size = (212, 60)
         self.small_square_button_size = (30, 30)
         self.medium_square_button_size = (50, 50)
         self.slider_width = 160
@@ -89,7 +93,7 @@ class Settings:
         self.wind_resistance = 0.015  # Resistance offered by the soft cap and by air friction
         self.wind_presim = 0        # Number of wind ticks to presimulate in worldgen
 
-        self.temps_equatorial = 90.0    # The target temperature for the equator (in F, because I am a dumb American)
+        self.temps_equatorial = 95.0    # The target temperature for the equator (in F, because I am a dumb American)
         self.temps_freezing = 32.0   # A number used by the atmosphere renderer to determine the cold gradient
         self.temps_lowest = -35.0       # The lowest allowed temperature
         self.temps_highest = 130           # The temperature cap
@@ -106,7 +110,7 @@ class Settings:
 
         self.season_ticks_per_year = 360  # The number of atmosphere ticks per full 4 season year
         self.season_ticks_this_year = 0  # Controls the part of the year you start in. Must be lower than the above
-        self.season_incline = 0.25  # The incline of the heat gradient relative to the equator at the solstices
+        self.season_incline = 0.26  # The incline of the heat gradient relative to the equator at the solstices
         self.season_ticks_modifier = 0.0  # A Modifier calculated internally by the function .find_season_multi
 
         self.wtr_sea_level = 0.20  # The sea level of the terrain, all lower points will be underwater
@@ -234,6 +238,282 @@ class Settings:
 
         else:
             return False
+
+    def save(self):
+        """Saves a dict from save_to_dict as a discreet file."""
+        file = self.save_to_dict()
+
+        with open('saves/settings.json', 'w') as write_file:
+            json.dump(file, write_file)
+
+
+    def save_to_dict(self):
+        """Saves the current settings to a dict variable."""
+        # Create the save file
+        file = {}
+
+        # Get version number
+        file['version'] = self.version
+
+        # Load Seed and Program data
+        file['seed'] = self.seed
+        file['debug_console'] = self.debug_console
+        file['debug_detail'] = self.debug_detail
+
+        # Pygame settings
+        file['enableAA'] = self.enableAA
+        file['window_width'] = self.window_width
+        file['window_aspect'] = self.window_aspect
+        file['window_size'] = self.window_size
+        file['text_box_width'] = self.text_box_width
+        file['render_size'] = self.render_size
+        file['screen_size'] = self.screen_size
+        file['framerate'] = self.framerate
+        file['do_render_altitudes'] = self.do_render_altitudes
+        file['do_render_rivers'] = self.do_render_rivers
+        file['do_render_atmosphere'] = self.do_render_atmosphere
+        file['do_render_rainfall'] = self.do_render_rainfall
+        file['do_render_coastlines'] = self.do_render_coastlines
+
+        # Color settings
+        file['clr'] = self.clr
+
+        # Menu settings
+        file['button_hover_delay'] = self.button_hover_delay
+        file['start_menu_button_size'] = self.start_menu_button_size
+        file['small_square_button_size'] = self.small_square_button_size
+        file['medium_square_button_size'] = self.medium_square_button_size
+        file['slider_width'] = self.slider_width
+        file['drop_down_width'] = self.drop_down_width
+
+        # Text settings
+        file['font_head_size'] = self.font_head_size
+        file['font_body_size'] = self.font_body_size
+
+        # Voronoi generation settings
+        file['total_cells'] = self.total_cells
+        file['relax_passes'] = self.relax_passes
+
+        # Terrain generation settings
+        file['tect_plates_min'] = self.tect_plates_min
+        file['tect_plates_max'] = self.tect_plates_max
+        file['tect_min_dist'] = self.tect_min_dist
+        file['tect_attempt_to_place'] = self.tect_attempt_to_place
+        file['tect_smoothing_resolution'] = self.tect_smoothing_resolution
+        file['tect_smoothing_repetitions'] = self.tect_smoothing_repetitions
+        file['tect_final_alt_mod'] = self.tect_final_alt_mod
+
+        file['mtn_peak_reduction_factor'] = self.mtn_peak_reduction_factor
+        file['mtn_peak_weight'] = self.mtn_peak_weight
+        file['mtn_max_node_chain'] = self.mtn_max_node_chain
+        file['mtn_fork_chance'] = self.mtn_fork_chance
+        file['mtn_ridges_max'] = self.mtn_ridges_max
+        file['mtn_ridges_min'] = self.mtn_ridges_min
+
+        file['atmo_tropics_extent'] = self.atmo_tropics_extent
+        file['atmo_arctic_extent'] = self.atmo_arctic_extent
+        file['atmo_iterations_per_frame'] = self.atmo_iterations_per_frame
+
+        file['wind_streams_vector'] = self.wind_streams_vector.x
+        file['wind_deflection_weight'] = self.wind_deflection_weight
+        file['wind_take_strength'] = self.wind_take_strength
+        file['wind_critical_angle'] = self.wind_critical_angle
+        file['wind_soft_cap'] = self.wind_soft_cap
+        file['wind_hard_cap'] = self.wind_hard_cap
+        file['wind_resistance'] = self.wind_resistance
+        file['wind_presim'] = self.wind_presim
+
+        file['temps_equatorial'] = self.temps_equatorial
+        file['temps_freezing'] = self.temps_freezing
+        file['temps_lowest'] = self.temps_lowest
+        file['temps_highest'] = self.temps_highest
+        file['temps_equatorial_rise'] = self.temps_equatorial_rise
+        file['temps_arctic_cooling'] = self.temps_arctic_cooling
+        file['temps_natural_cooling'] = self.temps_natural_cooling
+        file['temps_alt_cooling_threshold'] = self.temps_alt_cooling_threshold
+        file['temps_alt_cooling'] = self.temps_alt_cooling
+        file['temps_critical_angle'] = self.temps_critical_angle
+        file['temps_heat_bias'] = self.temps_heat_bias
+
+        file['baro_transfer_rate'] = self.baro_transfer_rate
+        file['baro_wind_effect'] = self.baro_wind_effect
+
+        file['season_ticks_per_year'] = self.season_ticks_per_year
+        file['season_ticks_this_year'] = self.season_ticks_this_year
+        file['season_incline'] = self.season_incline
+        file['season_ticks_modifier'] = self.season_ticks_modifier
+
+        file['wtr_sea_level'] = self.wtr_sea_level
+        file['wtr_rainfall_mod'] = self.wtr_rainfall_mod
+        file['wtr_rainfall_altitude_mod'] = self.wtr_rainfall_altitude_mod
+        file['wtr_baro_evap_rate'] = self.wtr_baro_evap_rate
+        file['wtr_humid_evap_rate'] = self.wtr_humid_evap_rate
+        file['wtr_drop_dist_mod'] = self.wtr_drop_dist_mod
+        file['wtr_reabsorption'] = self.wtr_reabsorption
+        file['wtr_flow_ticks_to_ave'] = self.wtr_flow_ticks_to_ave
+        file['wtr_min_flow_to_render'] = self.wtr_min_flow_to_render
+        file['wtr_river_flow_as_width'] = self.wtr_river_flow_as_width
+        file['wtr_max_river_render_width'] = self.wtr_max_river_render_width
+
+        file['erode_enable'] = self.erode_enable
+        file['erode_mod'] = self.erode_mod
+
+        # Biome generation settings
+        file['biome_humid_high'] = self.biome_humid_high
+        file['biome_humid_low'] = self.biome_humid_low
+        file['biome_arid'] = self.biome_arid
+        file['biome_desert_temp'] = self.biome_desert_temp
+        file['biome_heavy_rainfall'] = self.biome_heavy_rainfall
+        file['biome_light_rainfall'] = self.biome_light_rainfall
+        file['biome_forest_water_req'] = self.biome_forest_water_req
+        file['biome_rainforest_req'] = self.biome_rainforest_req
+        file['biome_alpine_line'] = self.biome_alpine_line
+        file['biome_plains_height'] = self.biome_plains_height
+        file['biome_water_flow_effect'] = self.biome_water_flow_effect
+
+        # Biome colors
+        file['biome_tint_strength'] = self.biome_tint_strength
+        file['biome_alt_tint_strength'] = self.biome_alt_tint_strength
+        file['biome_temp_tint_strength'] = self.biome_temp_tint_strength
+        file['biome_colors'] = self.biome_colors
+
+        return file
+
+    def load(self):
+        """Loads settings dict from a file."""
+        with open('saves/settings.json') as read_file:
+            file = json.load(read_file)
+
+        self.load_from_dict(file)
+
+    def load_from_dict(self, file):
+        """Loads the settings from a dict variable."""
+
+        # Get version number
+        if self.version == file['version'] or file['version'] in self.compatible_versions:
+
+            # Load Seed and Program data
+            self.seed = file['seed']
+            self.debug_console = file['debug_console']
+            self.debug_detail = file['debug_detail']
+
+            # Pygame settings
+            self.enableAA = file['enableAA']
+            self.window_width = file['window_width']
+            self.window_aspect = file['window_aspect']
+            self.window_size = file['window_size']
+            self.text_box_width = file['text_box_width']
+            self.render_size = file['render_size']
+            self.screen_size = file['screen_size']
+            self.framerate = file['framerate']
+            self.do_render_altitudes = file['do_render_altitudes']
+            self.do_render_rivers = file['do_render_rivers']
+            self.do_render_atmosphere = file['do_render_atmosphere']
+            self.do_render_rainfall = file['do_render_rainfall']
+            self.do_render_coastlines = file['do_render_coastlines']
+
+            # Color settings
+            self.clr = file['clr']
+
+            # Menu settings
+            self.button_hover_delay = file['button_hover_delay']
+            self.start_menu_button_size = file['start_menu_button_size']
+            self.small_square_button_size = file['small_square_button_size']
+            self.medium_square_button_size = file['medium_square_button_size']
+            self.slider_width = file['slider_width']
+            self.drop_down_width = file['drop_down_width']
+
+            # Text settings
+            self.font_head_size = file['font_head_size']
+            self.font_body_size = file['font_body_size']
+
+            # Voronoi generation settings
+            self.total_cells = file['total_cells']
+            self.relax_passes =file['relax_passes']
+
+            # Terrain generation settings
+            self.tect_plates_min = file['tect_plates_min']
+            self.tect_plates_max = file['tect_plates_max']
+            self.tect_min_dist = file['tect_min_dist']
+            self.tect_attempt_to_place = file['tect_attempt_to_place']
+            self.tect_smoothing_resolution = file['tect_smoothing_resolution']
+            self.tect_smoothing_repetitions = file['tect_smoothing_repetitions']
+            self.tect_final_alt_mod = file['tect_final_alt_mod']
+
+            self.mtn_peak_reduction_factor = file['mtn_peak_reduction_factor']
+            self.mtn_peak_weight = file['mtn_peak_weight']
+            self.mtn_max_node_chain = file['mtn_max_node_chain']
+            self.mtn_fork_chance = file['mtn_fork_chance']
+            self.mtn_ridges_max = file['mtn_ridges_max']
+            self.mtn_ridges_min = file['mtn_ridges_min']
+
+            self.atmo_tropics_extent = file['atmo_tropics_extent']
+            self.atmo_arctic_extent = file['atmo_arctic_extent']
+            self.atmo_iterations_per_frame = file['atmo_iterations_per_frame']
+
+            self.wind_streams_vector = Vector2(file['wind_streams_vector'], 0)
+            self.wind_deflection_weight = file['wind_deflection_weight']
+            self.wind_take_strength = file['wind_take_strength']
+            self.wind_critical_angle = file['wind_critical_angle']
+            self.wind_soft_cap = file['wind_soft_cap']
+            self.wind_hard_cap = file['wind_hard_cap']
+            self.wind_resistance = file['wind_resistance']
+            self.wind_presim = file['wind_presim']
+
+            self.temps_equatorial = file['temps_equatorial']
+            self.temps_freezing = file['temps_freezing']
+            self.temps_lowest = file['temps_lowest']
+            self.temps_highest = file['temps_highest']
+            self.temps_equatorial_rise = file['temps_equatorial_rise']
+            self.temps_arctic_cooling = file['temps_arctic_cooling']
+            self.temps_natural_cooling = file['temps_natural_cooling']
+            self.temps_alt_cooling_threshold = file['temps_alt_cooling_threshold']
+            self.temps_alt_cooling = file['temps_alt_cooling']
+            self.temps_critical_angle = file['temps_critical_angle']
+            self.temps_heat_bias = file['temps_heat_bias']
+
+            self.baro_transfer_rate = file['baro_transfer_rate']
+            self.baro_wind_effect = file['baro_wind_effect']
+
+            self.season_ticks_per_year = file['season_ticks_per_year']
+            self.season_ticks_this_year = file['season_ticks_this_year']
+            self.season_incline = file['season_incline']
+            self.season_ticks_modifier = file['season_ticks_modifier']
+
+            self.wtr_sea_level = file['wtr_sea_level']
+            self.wtr_rainfall_mod = file['wtr_rainfall_mod']
+            self.wtr_rainfall_altitude_mod = file['wtr_rainfall_altitude_mod']
+            self.wtr_baro_evap_rate = file['wtr_baro_evap_rate']
+            self.wtr_humid_evap_rate = file['wtr_humid_evap_rate']
+            self.wtr_drop_dist_mod = file['wtr_drop_dist_mod']
+            self.wtr_reabsorption = file['wtr_reabsorption']
+            self.wtr_flow_ticks_to_ave = file['wtr_flow_ticks_to_ave']
+            self.wtr_min_flow_to_render = file['wtr_min_flow_to_render']
+            self.wtr_river_flow_as_width = file['wtr_river_flow_as_width']
+            self.wtr_max_river_render_width = file['wtr_max_river_render_width']
+
+            self.erode_enable = file['erode_enable']
+            self.erode_mod = file['erode_mod']
+
+            # Biome generation settings
+            self.biome_humid_high = file['biome_humid_high']
+            self.biome_humid_low = file['biome_humid_low']
+            self.biome_arid = file['biome_arid']
+            self.biome_desert_temp = file['biome_desert_temp']
+            self.biome_heavy_rainfall = file['biome_heavy_rainfall']
+            self.biome_light_rainfall = file['biome_light_rainfall']
+            self.biome_forest_water_req = file['biome_forest_water_req']
+            self.biome_rainforest_req = file['biome_rainforest_req']
+            self.biome_alpine_line = file['biome_alpine_line']
+            self.biome_plains_height = file['biome_plains_height']
+            self.biome_water_flow_effect = file['biome_water_flow_effect']
+
+            # Biome colors
+            self.biome_tint_strength = file['biome_tint_strength']
+            self.biome_alt_tint_strength = file['biome_alt_tint_strength']
+            self.biome_temp_tint_strength = file['biome_temp_tint_strength']
+            self.biome_colors = file['biome_colors']
+
 
     def db_print(self, string, detail=0):
         """A debugging function that allows selective printing of debug console text based on a
