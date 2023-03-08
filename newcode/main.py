@@ -11,7 +11,7 @@ class Main:
         pygame.init()
 
         self.display = pygame.display.set_mode((1200, 780))
-        self.htmp_map = htmp.Heightmap((300, 200), 50)
+        self.htmp_map = htmp.Heightmap((150, 150), 50)
         self.crawler = htmp.DeformCrawler(self.htmp_map, wrap_horizontal=True)
 
         self.heightmap_image = pygame.transform.scale(self.htmp_map.get_surface(), (600, 400))
@@ -25,7 +25,7 @@ class Main:
                 if event.type == pygame.QUIT:
                     sys.exit()
 
-            if self.crawler.completed_full_passes % 10 == 0:
+            if self.crawler.completed_full_passes % 5 == 0:
                 if self.crawler.walk(50/3):
                     self.heightmap_image = pygame.transform.scale(self.htmp_map.get_surface(), (600, 400))
                     self.display.blit(self.heightmap_image, self.heightmap_rect)
