@@ -4,6 +4,7 @@ import heightmap as htmp
 from khaos_map import get_khaos_map, get_image_from_khaos_map
 from voronoi import get_voronoi
 from poissondisc import PoissonGrid
+from cells import AtmosphereCrawler
 
 
 class Main:
@@ -38,13 +39,29 @@ class Main:
 
             pygame.display.flip()
 
-    def display_khaos_map_loop(self):
+    def atmosphere_crawler_loop(self, crawler):
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     sys.exit()
 
+            crawler.walk(50/3)
+
             pygame.display.flip()
+
+    def display_khaos_map_loop(self):
+        repeat = True
+
+        while repeat:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    sys.exit()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        repeat = False
+
+            pygame.display.flip()
+
 
 if __name__ == "__main__":
     window = Main()
@@ -56,3 +73,6 @@ if __name__ == "__main__":
     window.display.blit(get_image_from_khaos_map(new_khaos_map, window.display.get_rect().size), (0, 0))
 
     window.display_khaos_map_loop()
+
+    new_atmosphere_crawler = AtmosphereCrawler(new_khaos_map.cells)
+    window.atmosphere_crawler_loop(new_atmosphere_crawler)

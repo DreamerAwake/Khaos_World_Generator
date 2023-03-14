@@ -90,20 +90,55 @@ def get_image_from_khaos_map(khaos_map, image_resolution):
     surface.fill((0, 0, 0))
 
     for each_cell in khaos_map.cells:
-        pygame.draw.polygon(surface, get_color_from_cell_altitude(each_cell), get_polygon_from_cell(each_cell, image_resolution))
+        pygame.draw.polygon(surface,
+                            get_average_color(get_color_from_cell_altitude(each_cell), get_color_from_temperature(each_cell), ignore_g=True, ignore_b=True),
+                            get_polygon_from_cell(each_cell, image_resolution)
+                            )
 
     return surface
 
 
 def get_color_from_cell_altitude(cell):
-    """Returns a tuple of (int, int, int) that is a valid pygame color reflecting the given cell's altitude."""
-    color = (
+    """Returns a pygame color reflecting the given cell's altitude."""
+    color = pygame.Color(
         round(get_capped_number((cell.altitude * 255), 0, 255)),
         round(get_capped_number((cell.altitude * 255), 0, 255)),
         round(get_capped_number((cell.altitude * 255), 0, 255))
     )
 
     return color
+
+def get_color_from_temperature(cell):
+    """Returns a pygame color reflecting the given cell's temperature."""
+    color = pygame.Color(
+        round(get_capped_number((cell.atmosphere.temperature * 25.5), 0, 255)),
+        0,
+        0
+    )
+
+    return color
+
+
+def get_average_color(color_1, color_2, ignore_r=False, ignore_g=False, ignore_b=False):
+    """Gets the average of two given pygame colors. Can be told to ignore color channels individually,
+    in which case the first color passed will provide that channel exclusively."""
+
+    if ignore_r:
+        r = color_1.r
+    else:
+        r = round(get_capped_number((color_1.r + color_2.r) / 2, 0, 255))
+
+    if ignore_g:
+        g = color_1.g
+    else:
+        g = round(get_capped_number((color_1.g + color_2.g) / 2, 0, 255))
+
+    if ignore_b:
+        b = color_1.b
+    else:
+        b = round(get_capped_number((color_1.b + color_2.b) / 2, 0, 255))
+
+    return pygame.Color(r, g, b)
 
 
 def get_random_color():

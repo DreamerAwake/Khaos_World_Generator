@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from math import atan2, pi, tau
+from math import atan2, pi, tau, trunc
 
 import pygame
 
@@ -23,10 +23,12 @@ class KhaosCell:
 @dataclass
 class CellAtmosphere:
     """Contains information about a cell's atmospheric conditions."""
-    def __init__(self, parent_cell):
+    def __init__(self, parent_cell, starting_temperature=50):
         self.wind_vector = pygame.Vector2(0, 0)
         self.wind_speed_by_latitude = get_latitude_wind_speed(parent_cell)
+
         self.moisture = 0
+        self.temperature = starting_temperature
 
         self.logged_adjustments = {}
 
@@ -60,37 +62,15 @@ class AtmosphereCrawler:
         this_cell = self.cells[self.current_index]
 
         # Calculate the changes from logged_adjustments
-        total_adjustments = [transfer_rate * wind_vector.magnitude() for transfer_rate, wind_vector, moisture in this_cell.atmosphere.logged_adjustments.values()]
-        maximum_additional_windspeed = 1.0 - this_cell.atmosphere.logged_adjustments[this_cell][1].magnitude()
-        if sum(total_adjustments) < maximum_additional_windspeed:
-            adjustment_multiplier = 1.0
-        else:
-            adjustment_multiplier = maximum_additional_windspeed / sum(total_adjustments)
+        adjustment_multiplier = get_transfer_adjustment_multiplier(this_cell)
 
         # Apply logged adjustments
-        for each_donor_cell in this_cell.atmosphere.logged_adjustments.keys():
-            donor_transfer_rate, donor_wind_vector, donor_moisture = this_cell.atmosphere.logged_adjustments[
-                each_donor_cell]
-            donate_this_windspeed = donor_transfer_rate * donor_wind_vector.magnitude() * adjustment_multiplier
-            donate_this_moisture = donor_transfer_rate * donor_moisture * adjustment_multiplier
-
-            # Adjust windspeed
-            each_donor_cell.atmosphere.wind_vector.scale_to_length(
-                get_capped_number(each_donor_cell.atmosphere.wind_vector.magnitude() - donate_this_windspeed,
-                                  minimum_output=0.0))
-            this_cell.atmosphere.wind_vector += donor_wind_vector.scale_to_length(donate_this_windspeed)
-
-            # Adjust moisture
-            each_donor_cell.atmosphere.moisture -= donate_this_moisture
-            this_cell.atmosphere.moisture += donate_this_moisture
+        apply_logged_adjustments(this_cell, adjustment_multiplier)
 
         # Subtract the windspeed lost to resistance.
         new_magnitude = get_capped_number(this_cell.atmosphere.wind_vector.magnitude() - self.wind_resistance,
                                           minimum_output=0.0, maximum_output=1.0)
         this_cell.atmosphere.wind_vector.scale_to_length(new_magnitude)
-
-        # Clear logged adjustments
-        this_cell.atmosphere.logged_adjustments.clear()
 
         self.current_index += 1  # Increment the step counter
         return False  # Let the crawler know it hasn't hit the end yet
@@ -105,7 +85,7 @@ class AtmosphereCrawler:
         neighbor_differences = []
 
         # place the cell in its own atmosphere log with a rate of 0.0
-        this_cell.atmosphere.logged_adjustments[this_cell] = (0.0, this_cell.atmosphere.wind_vector.magnitude(), this_cell.atmosphere.moisture)
+        this_cell.atmosphere.logged_adjustments[this_cell] = get_atmosphere_log(this_cell.atmosphere, 0.0)
 
         # Find the neighbor with the angle from the current cell closest to the cell's wind vector angle
         wind_vector_angle = get_vector_angle(this_cell.atmosphere.wind_vector.x, this_cell.atmosphere.wind_vector.y)
@@ -121,11 +101,23 @@ class AtmosphereCrawler:
         transfer_rate = get_atmospheric_transfer_speed(this_cell, this_cell.neighbor_cells[neighbor_index])
 
         # Log is a dict of this_cell object: (transfer rate, wind magnitude, moisture level)
-        this_cell.neighbor_cells[neighbor_index].atmosphere.logged_adjustments[this_cell] = (transfer_rate, this_cell.atmosphere.wind_vector.copy(), this_cell.atmosphere.moisture)
+        this_cell.neighbor_cells[neighbor_index].atmosphere.logged_adjustments[this_cell] = get_atmosphere_log(this_cell.atmosphere, transfer_rate)
 
         self.current_index += 1  # Increment the step counter
         return False  # Let the crawler know it hasn't hit the end yet
 
+    def walk(self, duration):
+        """The crawler takes steps until it is nearing the duration given.
+        Breaks and Returns true if the end of the map is reached.
+        Returns False when it runs without reaching the end."""
+        start_time = pygame.time.get_ticks()
+        last_step_duration = 0
+
+        while pygame.time.get_ticks() < start_time + duration - last_step_duration:
+            step_started_at = pygame.time.get_ticks()
+            if self.step():
+                return True
+            last_step_duration = pygame.time.get_ticks() - step_started_at
 
 @dataclass
 class KhaosVertex:
@@ -134,6 +126,45 @@ class KhaosVertex:
         self.x, self.y = position
         self.altitude = altitude
         self.parent_cells = []
+
+
+def apply_logged_adjustments(cell, adjustment_multiplier):
+    """Applies a cell's logged atmospheric adjustments. Then, clears the log so new calculations can be done."""
+    for each_donor_cell in cell.atmosphere.logged_adjustments.keys():
+        donor_transfer_rate, donor_wind_vector, donor_moisture, donor_temperature = cell.atmosphere.logged_adjustments[
+            each_donor_cell]
+        donate_this_windspeed = donor_transfer_rate * donor_wind_vector.magnitude() * adjustment_multiplier
+        donate_this_moisture = trunc(donor_transfer_rate * donor_moisture * adjustment_multiplier)
+        donate_this_temperature = get_temperature_change(donor_transfer_rate, cell, donor_temperature)
+
+        # Adjust windspeed
+        each_donor_cell.atmosphere.wind_vector.scale_to_length(
+            get_capped_number(each_donor_cell.atmosphere.wind_vector.magnitude() - donate_this_windspeed,
+                              minimum_output=0.0))
+        cell.atmosphere.wind_vector += donor_wind_vector.scale_to_length(donate_this_windspeed)
+
+        # Adjust moisture
+        each_donor_cell.atmosphere.moisture -= donate_this_moisture
+        cell.atmosphere.moisture += donate_this_moisture
+
+        # Adjust temperature
+        each_donor_cell.atmosphere.temperature -= donate_this_temperature
+        cell.atmosphere.temperature += donate_this_temperature
+
+        # Clear logged adjustments
+        cell.atmosphere.logged_adjustments.clear()
+
+
+def get_transfer_adjustment_multiplier(cell):
+    """Returns the adjustment multiplier that caps windspeed gains when facing multiple input wind vectors
+    during atmospheric calculations."""
+    total_adjustments = [transfer_rate * wind_vector.magnitude() for transfer_rate, wind_vector, moisture in
+                         cell.atmosphere.logged_adjustments.values()]
+    maximum_additional_windspeed = 1.0 - cell.atmosphere.logged_adjustments[cell][1].magnitude()
+    if sum(total_adjustments) < maximum_additional_windspeed:
+        return 1.0
+    else:
+        return maximum_additional_windspeed / sum(total_adjustments)
 
 
 def get_atmospheric_transfer_speed(cell, neighbor):
@@ -149,6 +180,24 @@ def get_atmospheric_transfer_speed(cell, neighbor):
     else:
         return transfer_rate
 
+
+def get_atmosphere_log(atmosphere, transfer_rate):
+    """Returns the log of that atmosphere's current state for the adjustment logger."""
+    return transfer_rate, atmosphere.wind_vector.copy(), atmosphere.moisture, atmosphere.temperature
+
+
+def get_temperature_change(donor_transfer_rate, cell, donor_temperature, tropics_extent=0.15, tropics_temp=100, tropics_warming=5, arctic_extent=0.85, arctic_temp=0, arctic_cooling=5):
+    """Gets the change in temperature for the atmosphere crawler's adjustment applier."""
+    temperature_difference = donor_temperature - cell.atmosphere.temperature
+    temperature_change = temperature_difference * donor_transfer_rate
+
+    if abs(cell.y) > arctic_extent and cell.atmosphere.temperature + temperature_change > arctic_temp:
+        temperature_change -= arctic_cooling
+
+    elif abs(cell.y) < tropics_extent and cell.atmosphere.temperature + temperature_change < tropics_temp:
+        temperature_change += tropics_warming
+
+    return temperature_change
 
 def get_latitude_wind_speed(cell):
     """Gets the added windspeed per tick for a cell's atmosphere based on its latitude."""
