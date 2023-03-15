@@ -2,7 +2,7 @@ import random
 
 import pygame
 from math import trunc
-from cells import KhaosCell, KhaosVertex
+from cells import KhaosCell, KhaosVertex, get_wind_slope_from_cell
 from heightmap import Heightmap, get_capped_number
 
 
@@ -44,6 +44,7 @@ def get_khaos_map(voronoi_diagram, heightmap):
     # Do post-hoc clean-up
     for each_cell in cells:
         find_neighbors(each_cell)
+        each_cell.atmosphere.wind_speed_from_slope = get_wind_slope_from_cell(each_cell)
 
     # Create the KhaosMap object and return it
     return KhaosMap(cells)
@@ -72,6 +73,14 @@ def get_polygon_from_cell(cell, resolution):
     return [get_position_in_resolution((vertex.x, vertex.y), resolution) for vertex in cell.region_vertices]
 
 
+def get_line_from_cell_atmosphere(cell, resolution, unit_length=1/20):
+    center_position = get_position_in_resolution((cell.x, cell.y), resolution)
+    end_position = get_position_in_resolution((cell.x + (cell.atmosphere.wind_vector.x * unit_length),
+                                               cell.y + (cell.atmosphere.wind_vector.y * unit_length)), resolution)
+
+    return center_position, end_position
+
+
 def get_position_in_resolution(float_position, new_resolution):
     """Given a position in the range of -1.0 to 1.0 in the x, y and a resolution:
     returns an adjusted location to the resolution as a tuple of (int, int)."""
@@ -89,11 +98,16 @@ def get_image_from_khaos_map(khaos_map, image_resolution):
     surface = pygame.Surface(image_resolution)
     surface.fill((0, 0, 0))
 
+    # Terrain layer
     for each_cell in khaos_map.cells:
         pygame.draw.polygon(surface,
                             get_average_color(get_color_from_cell_altitude(each_cell), get_color_from_temperature(each_cell), ignore_g=True, ignore_b=True),
                             get_polygon_from_cell(each_cell, image_resolution)
                             )
+
+    #Atmosphere layer
+    for each_cell in khaos_map.cells:
+        pygame.draw.line(surface, (0, 0, 0), *get_line_from_cell_atmosphere(each_cell, image_resolution))
 
     return surface
 
@@ -111,7 +125,7 @@ def get_color_from_cell_altitude(cell):
 def get_color_from_temperature(cell):
     """Returns a pygame color reflecting the given cell's temperature."""
     color = pygame.Color(
-        round(get_capped_number((cell.atmosphere.temperature * 25.5), 0, 255)),
+        round(get_capped_number((cell.atmosphere.temperature * 5.1), 0, 255)),
         0,
         0
     )

@@ -11,7 +11,7 @@ class Main:
     def __init__(self):
         pygame.init()
 
-        self.display = pygame.display.set_mode((1200, 780))
+        self.display = pygame.display.set_mode((1200, 700))
         self.htmp_map = htmp.Heightmap((150, 150), 50)
         self.crawler = htmp.DeformCrawler(self.htmp_map, wrap_horizontal=True)
 
@@ -39,7 +39,7 @@ class Main:
 
             pygame.display.flip()
 
-    def atmosphere_crawler_loop(self, crawler):
+    def atmosphere_crawler_loop(self, crawler, display):
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -47,6 +47,7 @@ class Main:
 
             crawler.walk(50/3)
 
+            display.blit(get_image_from_khaos_map(new_khaos_map, window.display.get_rect().size), (0, 0))
             pygame.display.flip()
 
     def display_khaos_map_loop(self):
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     window = Main()
     window.height_crawler_loop()
 
-    new_pgrid = PoissonGrid()
+    new_pgrid = PoissonGrid(100)
     new_pgrid.generate()
     new_khaos_map = get_khaos_map(get_voronoi(new_pgrid.found_points), window.htmp_map)
     window.display.blit(get_image_from_khaos_map(new_khaos_map, window.display.get_rect().size), (0, 0))
@@ -75,4 +76,4 @@ if __name__ == "__main__":
     window.display_khaos_map_loop()
 
     new_atmosphere_crawler = AtmosphereCrawler(new_khaos_map.cells)
-    window.atmosphere_crawler_loop(new_atmosphere_crawler)
+    window.atmosphere_crawler_loop(new_atmosphere_crawler, window.display)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from math import atan2, pi, tau, trunc
+from math import atan2, pi, tau, trunc, dist
 
 import pygame
 
@@ -24,8 +24,9 @@ class KhaosCell:
 class CellAtmosphere:
     """Contains information about a cell's atmospheric conditions."""
     def __init__(self, parent_cell, starting_temperature=50):
-        self.wind_vector = pygame.Vector2(0, 0)
+        self.wind_vector = pygame.Vector2(0, 0.00001)
         self.wind_speed_by_latitude = get_latitude_wind_speed(parent_cell)
+        self.wind_speed_from_slope = None
 
         self.moisture = 0
         self.temperature = starting_temperature
@@ -62,14 +63,18 @@ class AtmosphereCrawler:
         this_cell = self.cells[self.current_index]
 
         # Calculate the changes from logged_adjustments
-        adjustment_multiplier = get_transfer_adjustment_multiplier(this_cell)
+        adjustment_multiplier = get_transfer_adjustment_multiplier(self.current_index, this_cell)
 
         # Apply logged adjustments
-        apply_logged_adjustments(this_cell, adjustment_multiplier)
+        apply_logged_adjustments(self.cells, this_cell, adjustment_multiplier)
+
+        # Add the latitude and slope based wind adjustments
+        this_cell.atmosphere.wind_vector.x += this_cell.atmosphere.wind_speed_by_latitude
+        this_cell.atmosphere.wind_vector += this_cell.atmosphere.wind_speed_from_slope
 
         # Subtract the windspeed lost to resistance.
         new_magnitude = get_capped_number(this_cell.atmosphere.wind_vector.magnitude() - self.wind_resistance,
-                                          minimum_output=0.0, maximum_output=1.0)
+                                          minimum_output=0.00001, maximum_output=1.0)
         this_cell.atmosphere.wind_vector.scale_to_length(new_magnitude)
 
         self.current_index += 1  # Increment the step counter
@@ -85,7 +90,7 @@ class AtmosphereCrawler:
         neighbor_differences = []
 
         # place the cell in its own atmosphere log with a rate of 0.0
-        this_cell.atmosphere.logged_adjustments[this_cell] = get_atmosphere_log(this_cell.atmosphere, 0.0)
+        this_cell.atmosphere.logged_adjustments[self.current_index] = get_atmosphere_log(this_cell.atmosphere, 0.0)
 
         # Find the neighbor with the angle from the current cell closest to the cell's wind vector angle
         wind_vector_angle = get_vector_angle(this_cell.atmosphere.wind_vector.x, this_cell.atmosphere.wind_vector.y)
@@ -100,10 +105,11 @@ class AtmosphereCrawler:
         # Now find the adjustment value to log
         transfer_rate = get_atmospheric_transfer_speed(this_cell, this_cell.neighbor_cells[neighbor_index])
 
-        # Log is a dict of this_cell object: (transfer rate, wind magnitude, moisture level)
-        this_cell.neighbor_cells[neighbor_index].atmosphere.logged_adjustments[this_cell] = get_atmosphere_log(this_cell.atmosphere, transfer_rate)
+        # Log is a dict of cell_index: (transfer rate, wind magnitude, moisture level, temperature)
+        this_cell.neighbor_cells[neighbor_index].atmosphere.logged_adjustments[self.current_index] = get_atmosphere_log(this_cell.atmosphere, transfer_rate)
 
         self.current_index += 1  # Increment the step counter
+
         return False  # Let the crawler know it hasn't hit the end yet
 
     def walk(self, duration):
@@ -128,40 +134,44 @@ class KhaosVertex:
         self.parent_cells = []
 
 
-def apply_logged_adjustments(cell, adjustment_multiplier):
+def apply_logged_adjustments(cells, cell, adjustment_multiplier):
     """Applies a cell's logged atmospheric adjustments. Then, clears the log so new calculations can be done."""
-    for each_donor_cell in cell.atmosphere.logged_adjustments.keys():
-        donor_transfer_rate, donor_wind_vector, donor_moisture, donor_temperature = cell.atmosphere.logged_adjustments[
-            each_donor_cell]
+
+    for each_donor_cell_index in cell.atmosphere.logged_adjustments.keys():
+        donor_cell = cells[each_donor_cell_index]
+        donor_transfer_rate, donor_wind_vector, donor_moisture, donor_temperature = cell.atmosphere.logged_adjustments[each_donor_cell_index]
         donate_this_windspeed = donor_transfer_rate * donor_wind_vector.magnitude() * adjustment_multiplier
         donate_this_moisture = trunc(donor_transfer_rate * donor_moisture * adjustment_multiplier)
         donate_this_temperature = get_temperature_change(donor_transfer_rate, cell, donor_temperature)
 
         # Adjust windspeed
-        each_donor_cell.atmosphere.wind_vector.scale_to_length(
-            get_capped_number(each_donor_cell.atmosphere.wind_vector.magnitude() - donate_this_windspeed,
-                              minimum_output=0.0))
-        cell.atmosphere.wind_vector += donor_wind_vector.scale_to_length(donate_this_windspeed)
+        if donor_cell.atmosphere.wind_vector.magnitude() != 0:
+            donor_cell.atmosphere.wind_vector.scale_to_length(
+                get_capped_number(donor_cell.atmosphere.wind_vector.magnitude() - donate_this_windspeed,
+                                  minimum_output=0.0))
+
+            donor_wind_vector.scale_to_length(donate_this_windspeed)
+            cell.atmosphere.wind_vector += donor_wind_vector
 
         # Adjust moisture
-        each_donor_cell.atmosphere.moisture -= donate_this_moisture
+        donor_cell.atmosphere.moisture -= donate_this_moisture
         cell.atmosphere.moisture += donate_this_moisture
 
         # Adjust temperature
-        each_donor_cell.atmosphere.temperature -= donate_this_temperature
+        donor_cell.atmosphere.temperature -= donate_this_temperature
         cell.atmosphere.temperature += donate_this_temperature
 
-        # Clear logged adjustments
-        cell.atmosphere.logged_adjustments.clear()
+    # Clear logged adjustments
+    cell.atmosphere.logged_adjustments.clear()
 
 
-def get_transfer_adjustment_multiplier(cell):
+def get_transfer_adjustment_multiplier(cell_index, cell):
     """Returns the adjustment multiplier that caps windspeed gains when facing multiple input wind vectors
     during atmospheric calculations."""
-    total_adjustments = [transfer_rate * wind_vector.magnitude() for transfer_rate, wind_vector, moisture in
+    total_adjustments = [transfer_rate * wind_vector.magnitude() for transfer_rate, wind_vector, moisture, temperature in
                          cell.atmosphere.logged_adjustments.values()]
-    maximum_additional_windspeed = 1.0 - cell.atmosphere.logged_adjustments[cell][1].magnitude()
-    if sum(total_adjustments) < maximum_additional_windspeed:
+    maximum_additional_windspeed = 1.0 - cell.atmosphere.logged_adjustments[cell_index][1].magnitude()
+    if sum(total_adjustments) <= maximum_additional_windspeed or sum(total_adjustments) == 0.0:
         return 1.0
     else:
         return maximum_additional_windspeed / sum(total_adjustments)
@@ -170,7 +180,12 @@ def get_transfer_adjustment_multiplier(cell):
 def get_atmospheric_transfer_speed(cell, neighbor):
     """Given a cell and a neighbor, calculates the atmospheric transfer speed from the given cell to the neighbor.
     Assumes that the wind direction has already been checked."""
-    cell_transfer_intensity = cell.atmosphere.wind_vector.magnitude() * (cell.atmosphere.moisture / neighbor.atmosphere.moisture)
+    if neighbor.atmosphere.moisture != 0:
+        moisture_ratio = (cell.atmosphere.moisture / neighbor.atmosphere.moisture)
+    else:
+        moisture_ratio = 1
+
+    cell_transfer_intensity = cell.atmosphere.wind_vector.magnitude() * moisture_ratio
 
     transfer_rate = get_sigmoid_function(cell_transfer_intensity, slope=10, x_offset=0.5) - \
                     get_sigmoid_function(neighbor.atmosphere.wind_vector.magnitude(), slope=10, x_offset=0.5)
@@ -199,6 +214,7 @@ def get_temperature_change(donor_transfer_rate, cell, donor_temperature, tropics
 
     return temperature_change
 
+
 def get_latitude_wind_speed(cell):
     """Gets the added windspeed per tick for a cell's atmosphere based on its latitude."""
     result = get_sigmoid_function(abs(cell.y), slope=-15, x_offset=0.9, y_offset=-0.15, scale=0.15) + \
@@ -207,10 +223,45 @@ def get_latitude_wind_speed(cell):
     return result
 
 
+def get_distance_of_xy_elements(element_1, element_2):
+    """Returns the distance between two objects with a .x and .y properties."""
+    return dist((element_1.x, element_1.y), (element_2.x, element_2.y))
+
+
 def get_vector_angle(x, y):
     """Given a co-ordinate vector, gives the angle of that vector in radians."""
     return atan2(y, x)
 
+
+def get_wind_slope_from_cell(cell):
+    """Returns the vector adjustment placed on winds in a cell by their terrain's current slope."""
+    lowest_altitude = cell.altitude
+    lowest_altitude_element = cell
+    highest_altitude = cell.altitude
+    highest_altitude_element = cell
+
+    for each_neighbor_cell in cell.neighbor_cells:
+        if each_neighbor_cell.altitude < lowest_altitude:
+            lowest_altitude = each_neighbor_cell.altitude
+            lowest_altitude_element = each_neighbor_cell
+        elif each_neighbor_cell.altitude > highest_altitude:
+            highest_altitude = each_neighbor_cell.altitude
+            highest_altitude_element = each_neighbor_cell
+
+    run = get_distance_of_xy_elements(lowest_altitude_element, highest_altitude_element)
+
+    if run == 0:
+        slope = 0.5
+    else:
+        slope = (highest_altitude - lowest_altitude) / (2 * run)
+
+    vector = pygame.Vector2(lowest_altitude_element.x - highest_altitude_element.x,
+                            lowest_altitude_element.y - highest_altitude_element.y)
+
+    if vector.magnitude_squared() != 0.0:
+        vector.scale_to_length(get_capped_number(slope, 0.00001, 1.0))
+
+    return vector
 
 def get_angle_difference(angle_a, angle_b):
     """Returns the absolute value of the difference in radians between the two angles."""
